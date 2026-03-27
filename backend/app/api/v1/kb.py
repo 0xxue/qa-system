@@ -39,7 +39,7 @@ async def list_collections(user=Depends(get_optional_user)):
     if _session_factory:
         async with _session_factory() as session:
             result = await session.execute(text(
-                "SELECT id, name, description, doc_count, status, created_at FROM kb_collections ORDER BY created_at DESC"
+                "SELECT id, name, description, doc_count, status, tags, category, created_at FROM kb_collections ORDER BY created_at DESC"
             ))
             collections = [dict(row) for row in result.mappings().all()]
             return {"collections": collections}
@@ -53,6 +53,8 @@ async def list_collections(user=Depends(get_optional_user)):
 async def create_collection(
     name: str = Form(...),
     description: str = Form(""),
+    category: str = Form("general"),
+    tags: str = Form(""),
     user=Depends(get_optional_user),
 ):
     """Create a new knowledge base."""
@@ -60,9 +62,11 @@ async def create_collection(
     from sqlalchemy import text
     if _session_factory:
         async with _session_factory() as session:
+            import json as _json
+            tags_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
             result = await session.execute(
-                text("INSERT INTO kb_collections (name, description, owner_id) VALUES (:n, :d, :o) RETURNING id, name, description, doc_count, status"),
-                {"n": name, "d": description, "o": int(user.id) if str(user.id).isdigit() else 1},
+                text("INSERT INTO kb_collections (name, description, owner_id, category, tags) VALUES (:n, :d, :o, :c, :t) RETURNING id, name, description, doc_count, status, category, tags"),
+                {"n": name, "d": description, "o": int(user.id) if str(user.id).isdigit() else 1, "c": category, "t": _json.dumps(tags_list)},
             )
             row = result.mappings().first()
             await session.commit()

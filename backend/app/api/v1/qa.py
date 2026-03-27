@@ -119,6 +119,10 @@ async def stream(request: QARequest, user=Depends(get_optional_user)):
         full_confidence = 0.0
         full_chart = None
 
+        # Send conversation_id so frontend can track it
+        if conv_id:
+            yield f"data: {json.dumps({'conversation_id': conv_id})}\n\n"
+
         try:
             async for event in qa_graph.astream({
                 "query": request.query,

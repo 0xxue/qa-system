@@ -19,7 +19,8 @@ class QAState(TypedDict):
 
     # Intent detection
     intents: list[str]                  # Decomposed sub-questions (may be 1 or multiple)
-    query_type: str                     # simple_data / comparison / prediction / aggregation
+    query_type: str                     # simple_data / comparison / prediction / aggregation / knowledge / mixed
+    data_source: Optional[str]          # api / knowledge_base / both — determines which sources to search
 
     # RAG routing
     matched_apis: list[dict]            # APIs matched by RAG: [{name, endpoint, confidence}]

@@ -15,6 +15,8 @@ export default function KnowledgeBasePage() {
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
+  const [newCategory, setNewCategory] = useState('general');
+  const [newTags, setNewTags] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState('');
 
@@ -28,8 +30,8 @@ export default function KnowledgeBasePage() {
 
   const handleCreate = async () => {
     if (!newName.trim()) return;
-    await createCollection(newName, newDesc);
-    setShowCreate(false); setNewName(''); setNewDesc('');
+    await createCollection(newName, newDesc, newCategory, newTags);
+    setShowCreate(false); setNewName(''); setNewDesc(''); setNewCategory('general'); setNewTags('');
     listCollections().then((data: any) => setCollections(data?.collections || data || []));
     toast('Collection created', 'success');
   };
@@ -98,7 +100,12 @@ export default function KnowledgeBasePage() {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</div>
                 {c.description && <div style={{ fontSize: 10, color: 'var(--mid)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.description}</div>}
-                <div className="font-mono" style={{ fontSize: 9, color: 'var(--dim)' }}>{c.doc_count} docs</div>
+                <div className="font-mono" style={{ fontSize: 9, color: 'var(--dim)', display: 'flex', gap: 6, alignItems: 'center' }}>
+                  {c.doc_count} docs
+                  {(c as any).category && (c as any).category !== 'general' && (
+                    <span style={{ padding: '1px 4px', border: '1px solid var(--line2)', color: 'var(--orange)', fontSize: 8 }}>{(c as any).category}</span>
+                  )}
+                </div>
               </div>
               <button onClick={e => { e.stopPropagation(); handleDelete(c.id); }}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
@@ -192,6 +199,23 @@ export default function KnowledgeBasePage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <Input placeholder="Collection name" value={newName} onChange={e => setNewName(e.target.value)} />
           <Input placeholder="Description (optional)" value={newDesc} onChange={e => setNewDesc(e.target.value)} />
+          <div>
+            <div className="font-mono" style={{ fontSize: 9, color: 'var(--orange)', letterSpacing: 2, marginBottom: 6, textTransform: 'uppercase' }}>Category</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {['general', 'hr', 'product', 'technical', 'policy', 'finance'].map(cat => (
+                <button key={cat} onClick={() => setNewCategory(cat)} className="font-mono"
+                  style={{
+                    padding: '4px 10px', border: `1.5px solid ${newCategory === cat ? 'var(--orange)' : 'var(--line)'}`,
+                    background: newCategory === cat ? 'rgba(212, 82, 26, 0.06)' : 'transparent',
+                    color: newCategory === cat ? 'var(--orange)' : 'var(--mid)',
+                    fontSize: 10, cursor: 'pointer',
+                  }}>
+                  {cat}
+                </button>
+              ))}
+            </div>
+          </div>
+          <Input placeholder="Tags (comma separated, e.g. resume, interview)" value={newTags} onChange={e => setNewTags(e.target.value)} />
         </div>
       </Modal>
     </div>

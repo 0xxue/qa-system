@@ -56,13 +56,15 @@ async def detect_intent(state: QAState) -> dict:
 
     intents = response.get("intents", [query])
     query_type = response.get("query_type", "simple_data")
+    data_source = response.get("data_source", "both")
     requires_calc = response.get("requires_calculation", False)
 
-    logger.info("Intent detected", intents=intents, query_type=query_type, requires_calc=requires_calc)
+    logger.info("Intent detected", intents=intents, query_type=query_type, data_source=data_source, requires_calc=requires_calc)
 
     return {
         "intents": intents,
         "query_type": query_type,
+        "data_source": data_source,
         "processing_steps": state.get("processing_steps", []) + ["intent_detected"],
     }
 
@@ -90,38 +92,54 @@ async def classify_source(state: QAState) -> dict:
 # ========== Node 3: RAG Search ==========
 
 async def rag_search(state: QAState) -> dict:
-    """Semantic search for matching API endpoints + knowledge base documents."""
+    """
+    Semantic search with intent-based routing:
+    - data_source='api' → only search API endpoints
+    - data_source='knowledge_base' → only search KB documents
+    - data_source='both' → search both (default)
+    """
     intents = state["intents"]
+    data_source = state.get("data_source", "both")
     all_matched = []
     max_confidence = 0.0
-
-    # Search API endpoints
-    for intent in intents:
-        results = await search_apis(intent)
-        for r in results:
-            if r["name"] not in [m["name"] for m in all_matched]:
-                all_matched.append(r)
-            max_confidence = max(max_confidence, r.get("confidence", 0))
-
-    # Search knowledge base documents
     kb_context = ""
-    try:
-        from app.services.kb_service import KnowledgeBaseService
-        kb_svc = KnowledgeBaseService()
-        kb_results = await kb_svc.search(state["query"], top_k=5)
-        if kb_results:
-            kb_chunks = [f"[{r.get('metadata', {}).get('filename', 'doc')}] {r['content']}" for r in kb_results if r.get("similarity", 0) > 0.3]
-            if kb_chunks:
-                kb_context = "\n\n---\n\n".join(kb_chunks)
-                # If KB has good matches, boost confidence
-                best_sim = max(r.get("similarity", 0) for r in kb_results)
-                if best_sim > 0.5:
-                    max_confidence = max(max_confidence, best_sim)
-                logger.info("KB search found results", chunks=len(kb_chunks), best_similarity=round(best_sim, 2))
-    except Exception as e:
-        logger.warning("KB search failed", error=str(e))
 
-    logger.info("RAG search complete", matched=len(all_matched), confidence=round(max_confidence, 2), has_kb=bool(kb_context))
+    # Search API endpoints (skip if knowledge_base only)
+    if data_source in ("api", "both"):
+        for intent in intents:
+            results = await search_apis(intent)
+            for r in results:
+                if r["name"] not in [m["name"] for m in all_matched]:
+                    all_matched.append(r)
+                max_confidence = max(max_confidence, r.get("confidence", 0))
+
+    # Search knowledge base documents (skip if api only)
+    if data_source in ("knowledge_base", "both"):
+        try:
+            from app.services.kb_service import KnowledgeBaseService
+            kb_svc = KnowledgeBaseService()
+            kb_results = await kb_svc.search(state["query"], top_k=5)
+            if kb_results:
+                kb_chunks = [
+                    f"[KB: {r.get('metadata', {}).get('filename', 'document')}] {r['content']}"
+                    for r in kb_results if r.get("similarity", 0) > 0.2
+                ]
+                if kb_chunks:
+                    kb_context = "\n\n---\n\n".join(kb_chunks)
+                    best_sim = max(r.get("similarity", 0) for r in kb_results)
+                    if best_sim > 0.4:
+                        max_confidence = max(max_confidence, best_sim)
+                    logger.info("KB search results", chunks=len(kb_chunks), best_similarity=round(best_sim, 2))
+        except Exception as e:
+            logger.warning("KB search failed", error=str(e))
+
+    # If knowledge_base only and no API matches needed, ensure confidence is high enough to proceed
+    if data_source == "knowledge_base" and kb_context and not all_matched:
+        max_confidence = max(max_confidence, 0.7)
+        # Add a dummy API match so the graph doesn't fallback
+        all_matched.append({"name": "system_overview", "endpoint": "/api/v1/data/system/overview", "confidence": 0.3, "params": {}})
+
+    logger.info("RAG search complete", data_source=data_source, api_matches=len(all_matched), confidence=round(max_confidence, 2), has_kb=bool(kb_context))
 
     return {
         "matched_apis": all_matched,
@@ -203,15 +221,23 @@ async def analyze(state: QAState) -> dict:
 
     calc_results = _run_calculations(api_results, query_type)
 
-    data_context = _format_data_with_sources(api_results)
-    if calc_results:
-        data_context += f"\n\nCalculation results:\n{json.dumps(calc_results, ensure_ascii=False, default=str)}"
+    # Build clearly separated data context
+    data_sections = []
 
-    # Add knowledge base context if available
+    # Section 1: API data
+    api_context = _format_data_with_sources(api_results)
+    if api_context.strip():
+        data_sections.append(f"## [API] Real-time System Data\n\n{api_context}")
+
+    if calc_results:
+        data_sections.append(f"## [API] Calculation Results\n\n{json.dumps(calc_results, ensure_ascii=False, default=str)}")
+
+    # Section 2: KB data
     kb_context = state.get("kb_context", "")
     if kb_context:
-        data_context += f"\n\n## Knowledge Base Documents:\n{kb_context}"
+        data_sections.append(f"## [KB] Knowledge Base Documents\n\nThe following content was retrieved from uploaded documents in the knowledge base:\n\n{kb_context}")
 
+    data_context = "\n\n---\n\n".join(data_sections)
     prompt = _load_prompt("analysis").replace("{data}", data_context)
 
     primary = await call_llm(model="primary", system=prompt, user=query, response_format="json")

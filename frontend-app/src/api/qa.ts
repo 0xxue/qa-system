@@ -6,6 +6,7 @@ export interface StreamCallbacks {
   onSources?: (sources: Array<{ type: string; name: string }>) => void;
   onChart?: (chart: Record<string, unknown>) => void;
   onConfidence?: (confidence: number) => void;
+  onConversationId?: (id: number) => void;
   onDone?: () => void;
   onError?: (error: string) => void;
 }
@@ -53,6 +54,7 @@ export async function streamQuestion(query: string, conversationId?: number, cal
 
       try {
         const evt = JSON.parse(data);
+        if (evt.conversation_id) callbacks?.onConversationId?.(evt.conversation_id);
         if (evt.step) callbacks?.onStep?.(evt.step);
         if (evt.answer) { fullAnswer = evt.answer; callbacks?.onContent?.(fullAnswer); }
         if (evt.chunk) { fullAnswer += evt.chunk; callbacks?.onContent?.(fullAnswer); }

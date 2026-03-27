@@ -6,7 +6,7 @@ from typing import Optional
 
 class QARequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000, description="User question")
-    conversation_id: Optional[str] = Field(None, description="For multi-turn conversations")
+    conversation_id: Optional[str | int] = Field(None, description="For multi-turn conversations")
 
 
 class SourceItem(BaseModel):

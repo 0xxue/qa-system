@@ -114,6 +114,7 @@ export default function ChatPage() {
 
     try {
       await streamQuestion(text, conversationId ?? undefined, {
+        onConversationId: (id) => { setConversationId(id); refreshConversations(); },
         onStep: (step) => {
           updateLastMessage({ steps: [...(useChatStore.getState().messages.at(-1)?.steps || []), step] });
           botSay(STEP_MESSAGES[step] || `Processing: ${step}`);
@@ -127,7 +128,8 @@ export default function ChatPage() {
           setEmotion('happy');
           botSay('Done! Let me know if you need more.');
           setTimeout(() => setEmotion('idle'), 3000);
-          refreshConversations();
+          // Delay refresh to allow backend to finish saving
+          setTimeout(() => refreshConversations(), 1500);
         },
         onError: (err) => {
           updateLastMessage({ content: `Error: ${err}`, loading: false });

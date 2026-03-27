@@ -168,8 +168,11 @@ class KnowledgeBaseService:
 
     # ========== Search ==========
 
-    async def search(self, query: str, collection_id: int = None, top_k: int = 5) -> list[dict]:
-        """Semantic search using pgvector cosine similarity."""
+    async def search(self, query: str, collection_id: int = None, category: str = None, tags: list[str] = None, top_k: int = 5) -> list[dict]:
+        """
+        Semantic search using pgvector cosine similarity.
+        Supports filtering by collection_id, category, or tags.
+        """
         from sqlalchemy import text
         sf = self._get_sf()
         if not sf:
@@ -180,12 +183,25 @@ class KnowledgeBaseService:
         vec = query_embedding[0]
         vec_str = "[" + ",".join(str(float(v)) for v in vec) + "]"
 
-        # pgvector cosine distance search
+        # Build WHERE clause with optional filters
         where = "WHERE 1=1"
-        params = {"vec": vec_str, "k": top_k}
+        params: dict = {"vec": vec_str, "k": top_k}
+
         if collection_id:
             where += " AND c.collection_id = :cid"
             params["cid"] = collection_id
+
+        if category:
+            where += " AND col.category = :cat"
+            params["cat"] = category
+
+        if tags:
+            # Match any tag in the collection's tags array
+            where += " AND col.tags ?| :tags"
+            params["tags"] = tags
+
+        # Join with collections table for tag/category filtering
+        join = "JOIN kb_collections col ON c.collection_id = col.id" if (category or tags) else ""
 
         async with sf() as session:
             result = await session.execute(
@@ -193,6 +209,7 @@ class KnowledgeBaseService:
                     SELECT c.id, c.document_id, c.collection_id, c.content, c.metadata_json,
                            1 - (c.embedding <=> cast(:vec AS vector)) AS similarity
                     FROM kb_chunks c
+                    {join}
                     {where}
                     ORDER BY c.embedding <=> cast(:vec AS vector)
                     LIMIT :k
@@ -208,7 +225,7 @@ class KnowledgeBaseService:
                 "document_id": row["document_id"],
                 "collection_id": row["collection_id"],
                 "content": row["content"],
-                "metadata": json.loads(row["metadata_json"]) if row["metadata_json"] else {},
+                "metadata": row["metadata_json"] if isinstance(row["metadata_json"], dict) else (json.loads(row["metadata_json"]) if row["metadata_json"] else {}),
                 "similarity": round(float(row["similarity"]), 4),
             })
 
