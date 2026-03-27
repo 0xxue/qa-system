@@ -3,6 +3,8 @@ Data Endpoints - Business data queries
 
 These endpoints are called by the LangGraph workflow (via RAG routing),
 and can also be called directly by the frontend.
+
+Customize these for your domain.
 """
 
 from fastapi import APIRouter, Depends, Query
@@ -14,40 +16,40 @@ router = APIRouter()
 
 @router.get("/system/overview")
 async def system_overview(user=Depends(get_current_user)):
-    """System-wide overview: total users, active users, total funds, etc."""
+    """System-wide overview: total users, active users, items, health."""
     svc = DataService()
     return await svc.get_system_overview()
 
 
-@router.get("/products/expiring")
-async def expiring_products(
+@router.get("/items/expiring")
+async def items_expiring(
     date: str = Query(None, description="Date string, e.g. 'today', 'tomorrow', '2025-12-01'"),
     user=Depends(get_current_user),
 ):
-    """Products expiring on or near the specified date."""
+    """Items expiring on or near the specified date."""
     svc = DataService()
-    return await svc.get_expiring_products(date)
+    return await svc.get_items_expiring(date)
 
 
-@router.get("/products/stats")
-async def product_stats(
+@router.get("/items/stats")
+async def item_stats(
     start_date: str = Query(None),
     end_date: str = Query(None),
     user=Depends(get_current_user),
 ):
-    """Product statistics for a date range."""
+    """Item statistics for a date range."""
     svc = DataService()
-    return await svc.get_product_stats(start_date, end_date)
+    return await svc.get_item_stats(start_date, end_date)
 
 
-@router.get("/finance/summary")
-async def finance_summary(
+@router.get("/metrics/summary")
+async def summary_metrics(
     period: str = Query("daily", description="daily / weekly / monthly"),
     user=Depends(get_current_user),
 ):
-    """Financial summary: income, expenses, profit."""
+    """Summary metrics: revenue, costs, KPIs."""
     svc = DataService()
-    return await svc.get_finance_summary(period)
+    return await svc.get_summary_metrics(period)
 
 
 @router.get("/users/stats")
@@ -55,3 +57,10 @@ async def user_stats(user=Depends(get_current_user)):
     """User statistics: registrations, active, retention."""
     svc = DataService()
     return await svc.get_user_stats()
+
+
+@router.get("/categories/distribution")
+async def category_distribution(user=Depends(get_current_user)):
+    """Category/tier distribution."""
+    svc = DataService()
+    return await svc.get_category_distribution()

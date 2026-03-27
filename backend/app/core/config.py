@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_format: str = "json"  # "json" for production, "console" for development
 
+    # AI Bot (optional module — disable to run as pure QA API)
+    enable_ai_bot: bool = False
+    bot_websocket_path: str = "/ws/bot"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

@@ -1,15 +1,16 @@
 """
 RAG Service - Semantic API routing via LightRAG
 
-Replaces V2's 50+ regex patterns in query_api_mappings.json
-with semantic vector search over API descriptions.
+Replaces hardcoded regex patterns with semantic vector search over API descriptions.
 
 How it works:
 1. At startup: API descriptions are indexed into LightRAG (embedding → vector store)
 2. At query time: User question → embedding → find most similar API descriptions
 3. Returns matched APIs with confidence scores
 
-"到期" ≈ "结束" ≈ "截止" → all match get_product_end_data
+To adapt to your domain:
+- Update API_DESCRIPTIONS below to match your data sources
+- The semantic search will automatically handle synonyms and variations
 """
 
 import os
@@ -22,46 +23,50 @@ from app.core.config import get_settings
 
 logger = structlog.get_logger()
 
-# API knowledge base - descriptions of all available data endpoints
+# ══════════════════════════════════════════════════
+# API Knowledge Base
+# Update these descriptions to match YOUR data sources.
+# The semantic search will handle query variations automatically.
+# ══════════════════════════════════════════════════
+
 API_DESCRIPTIONS = [
     {
         "name": "system_overview",
         "endpoint": "/api/v1/data/system/overview",
         "description": (
-            "查询系统整体运营数据概览。"
-            "包括总用户数、活跃用户数、新增用户、总资金、日均消耗、系统健康状态。"
-            "适用场景：了解系统整体情况、数据概览、运营数据、系统状态、今天的数据"
+            "Query system-wide operational overview. "
+            "Includes total users, active users, new users, total items, system health. "
+            "Use for: overall status, dashboard data, system health check, how is the system doing"
         ),
     },
     {
-        "name": "expiring_products",
-        "endpoint": "/api/v1/data/products/expiring",
+        "name": "items_expiring",
+        "endpoint": "/api/v1/data/items/expiring",
         "description": (
-            "查询指定日期到期的产品列表。"
-            "支持查询即将到期、快结束、快截止、要到期、已经到期的产品。"
-            "返回产品名称、到期时间、涉及金额、状态。"
-            "适用场景：查到期产品、结束的产品、截止的产品、过期产品。"
-            "参数：日期（今天、明天、昨天、本周、上周、某具体日期）"
+            "Query items expiring on a specific date. "
+            "Items can be products, licenses, subscriptions, contracts, etc. "
+            "Returns item name, expiry date, amount, status. "
+            "Use for: expiring items, ending soon, deadline, about to expire, overdue"
         ),
         "params": {"date": "dynamic"},
     },
     {
-        "name": "product_stats",
-        "endpoint": "/api/v1/data/products/stats",
+        "name": "item_stats",
+        "endpoint": "/api/v1/data/items/stats",
         "description": (
-            "查询产品统计数据，支持时间范围筛选。"
-            "包括产品数量变化趋势、新增产品、到期产品、活跃产品占比。"
-            "适用场景：产品分析、趋势对比、周报月报、最近一段时间的产品数据"
+            "Query item statistics with time range filter. "
+            "Includes quantity trends, new items, expiring items, active items. "
+            "Use for: item analysis, trends, comparison, weekly/monthly report"
         ),
         "params": {"start_date": "dynamic", "end_date": "dynamic"},
     },
     {
-        "name": "finance_summary",
-        "endpoint": "/api/v1/data/finance/summary",
+        "name": "summary_metrics",
+        "endpoint": "/api/v1/data/metrics/summary",
         "description": (
-            "查询财务摘要数据。"
-            "包括收入、支出、利润、资金余额、日均消耗、资金可用天数。"
-            "适用场景：资金状况、收支分析、资金还能撑多久、财务报表、钱够不够"
+            "Query summary metrics and KPIs. "
+            "Includes revenue, costs, profit, budget remaining, daily spend, runway days. "
+            "Use for: budget status, cost analysis, how long will budget last, financial overview"
         ),
         "params": {"period": "daily|weekly|monthly"},
     },
@@ -69,9 +74,9 @@ API_DESCRIPTIONS = [
         "name": "user_stats",
         "endpoint": "/api/v1/data/users/stats",
         "description": (
-            "查询用户统计数据。"
-            "包括注册用户数、活跃用户数、留存率、新增趋势、用户分布。"
-            "适用场景：用户分析、增长数据、留存分析、有多少用户"
+            "Query user statistics. "
+            "Includes total users, active users, retention rate, growth trend. "
+            "Use for: user analysis, growth data, retention, how many users"
         ),
     },
 ]
@@ -97,7 +102,7 @@ async def _llm_func(prompt, system_prompt=None, history_messages=[], keyword_ext
 async def _embed_func(texts: list[str], **kwargs):
     """
     Local embedding using sentence-transformers.
-    No API key needed, runs on CPU, good enough for small knowledge bases.
+    No API key needed, runs on CPU.
     Uses paraphrase-multilingual-MiniLM-L12-v2 (supports Chinese + English).
     """
     import numpy as np
@@ -112,10 +117,7 @@ async def _embed_func(texts: list[str], **kwargs):
 
 
 async def init_rag():
-    """
-    Initialize RAG knowledge base at application startup.
-    Index all API descriptions into LightRAG vector store.
-    """
+    """Initialize RAG knowledge base at startup. Index all API descriptions."""
     global _rag
     settings = get_settings()
 
@@ -127,28 +129,25 @@ async def init_rag():
             working_dir=working_dir,
             llm_model_func=_llm_func,
             embedding_func=EmbeddingFunc(
-                embedding_dim=384,  # paraphrase-multilingual-MiniLM-L12-v2 output dim
+                embedding_dim=384,
                 max_token_size=512,
                 func=_embed_func,
             ),
         )
 
-        # Build documents from API descriptions
         documents = []
         for api in API_DESCRIPTIONS:
             doc = (
-                f"API接口名称: {api['name']}\n"
-                f"接口地址: {api['endpoint']}\n"
-                f"功能描述: {api['description']}\n"
+                f"API Name: {api['name']}\n"
+                f"Endpoint: {api['endpoint']}\n"
+                f"Description: {api['description']}\n"
             )
             if "params" in api:
-                doc += f"参数: {api['params']}\n"
+                doc += f"Parameters: {api['params']}\n"
             documents.append(doc)
 
-        # Initialize storage
         await _rag.initialize_storages()
 
-        # Insert all API docs
         combined = "\n---\n".join(documents)
         await _rag.ainsert(combined)
 
@@ -163,13 +162,8 @@ async def search_apis(query: str, top_k: int = 3) -> list[dict]:
     """
     Search for matching APIs using semantic similarity.
 
-    Args:
-        query: User's question or sub-intent
-        top_k: Maximum number of results
-
     Returns:
-        List of matched APIs with confidence scores:
-        [{"name": "...", "endpoint": "...", "confidence": 0.85, "params": {...}}]
+        List of matched APIs: [{"name": "...", "endpoint": "...", "confidence": 0.85, "params": {...}}]
     """
     if _rag:
         return await _search_with_rag(query, top_k)
@@ -179,7 +173,7 @@ async def search_apis(query: str, top_k: int = 3) -> list[dict]:
 
 
 async def _search_with_rag(query: str, top_k: int) -> list[dict]:
-    """Semantic search using LightRAG hybrid mode (keyword + vector)."""
+    """Semantic search using LightRAG hybrid mode."""
     try:
         result = await _rag.aquery(
             query,
@@ -188,7 +182,6 @@ async def _search_with_rag(query: str, top_k: int) -> list[dict]:
 
         result_text = str(result).lower()
 
-        # Match RAG results back to API definitions
         matched = []
         for api in API_DESCRIPTIONS:
             name_lower = api["name"].lower()
@@ -202,13 +195,10 @@ async def _search_with_rag(query: str, top_k: int) -> list[dict]:
                     "params": api.get("params", {}),
                 })
 
-        # If RAG returned something but we couldn't match exact API names,
-        # try a more lenient matching
         if not matched and result_text.strip():
-            # Score each API by keyword overlap with RAG result
             for api in API_DESCRIPTIONS:
-                keywords = api["description"].replace("。", " ").replace("、", " ").split()
-                score = sum(1 for kw in keywords if kw in result_text)
+                keywords = api["description"].replace(".", " ").replace(",", " ").split()
+                score = sum(1 for kw in keywords if kw.lower() in result_text)
                 if score >= 2:
                     matched.append({
                         "name": api["name"],
@@ -222,7 +212,6 @@ async def _search_with_rag(query: str, top_k: int) -> list[dict]:
             logger.info("RAG matched", query=query[:50], apis=[m["name"] for m in matched[:top_k]])
             return matched[:top_k]
 
-        # Nothing matched
         logger.warning("RAG returned no matches", query=query[:50])
         return [{
             "name": "system_overview",
@@ -237,21 +226,20 @@ async def _search_with_rag(query: str, top_k: int) -> list[dict]:
 
 
 def _search_with_keywords(query: str, top_k: int) -> list[dict]:
-    """
-    Fallback keyword matching when LightRAG is not available.
-    """
+    """Fallback keyword matching when LightRAG is not available."""
     keywords_map = {
-        "system_overview": ["概览", "整体", "数据", "情况", "状态", "运营", "总览"],
-        "expiring_products": ["到期", "结束", "截止", "过期", "快到期", "快结束", "快截止"],
-        "product_stats": ["产品统计", "产品分析", "趋势", "对比", "变化", "产品数据"],
-        "finance_summary": ["资金", "收入", "支出", "利润", "财务", "撑多久", "余额", "钱"],
-        "user_stats": ["用户", "注册", "活跃", "留存", "增长", "多少人"],
+        "system_overview": ["overview", "status", "health", "dashboard", "system", "overall"],
+        "items_expiring": ["expir", "ending", "deadline", "overdue", "due", "expire"],
+        "item_stats": ["stats", "trend", "analysis", "compare", "report", "items"],
+        "summary_metrics": ["budget", "revenue", "cost", "spend", "profit", "money", "metric"],
+        "user_stats": ["user", "active", "retention", "growth", "register"],
     }
 
     matched = []
+    query_lower = query.lower()
     for api in API_DESCRIPTIONS:
         keywords = keywords_map.get(api["name"], [])
-        score = sum(1 for kw in keywords if kw in query)
+        score = sum(1 for kw in keywords if kw in query_lower)
         if score > 0:
             matched.append({
                 "name": api["name"],

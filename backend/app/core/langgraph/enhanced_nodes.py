@@ -70,7 +70,7 @@ async def check_hallucination(state: QAState) -> dict:
     by the retrieved data. If hallucination is detected, the answer is
     flagged and corrected.
 
-    This is critical for financial/business data where wrong numbers
+    This is critical for data-driven answers where wrong numbers
     can lead to bad decisions.
     """
     answer = state.get("answer", "")

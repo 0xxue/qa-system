@@ -1,14 +1,14 @@
-"""Unit tests for financial formatter."""
+"""Unit tests for data formatter."""
 
-from app.utils.financial_fmt import FinancialFormatter as fmt
+from app.utils.formatter import DataFormatter as fmt
 
 
 class TestCurrency:
-    def test_cny(self):
-        assert fmt.format_currency(1234567.89) == "¥1,234,567.89"
-
     def test_usd(self):
-        assert fmt.format_currency(1234.56, "USD") == "$1,234.56"
+        assert fmt.format_currency(1234.56) == "$1,234.56"
+
+    def test_cny(self):
+        assert fmt.format_currency(1234567.89, "CNY") == "¥1,234,567.89"
 
     def test_no_symbol(self):
         assert fmt.format_currency(1234.56, show_symbol=False) == "1,234.56"
@@ -28,31 +28,31 @@ class TestPercent:
 
 
 class TestNumber:
-    def test_wan(self):
-        assert fmt.format_number(1500000) == "150.0万"
-
-    def test_yi(self):
-        assert fmt.format_number(120000000) == "1.2亿"
-
     def test_english_m(self):
-        assert fmt.format_number(1500000, locale="en") == "1.5M"
+        assert fmt.format_number(1500000) == "1.5M"
 
     def test_english_k(self):
-        assert fmt.format_number(1500, locale="en") == "1.5K"
+        assert fmt.format_number(1500) == "1.5K"
+
+    def test_zh_wan(self):
+        assert fmt.format_number(1500000, locale="zh") == "150.0万"
+
+    def test_zh_yi(self):
+        assert fmt.format_number(120000000, locale="zh") == "1.2亿"
 
     def test_small(self):
         assert fmt.format_number(500) == "500"
 
 
-class TestDays:
+class TestDuration:
     def test_days(self):
-        assert fmt.format_days(3) == "3天"
+        assert fmt.format_duration(3) == "3d"
 
     def test_weeks(self):
-        assert fmt.format_days(14) == "2周"
+        assert fmt.format_duration(14) == "2w"
 
     def test_weeks_days(self):
-        assert fmt.format_days(45) == "6周3天"
+        assert fmt.format_duration(45) == "6w 3d"
 
 
 class TestTrend:

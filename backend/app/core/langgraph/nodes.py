@@ -2,7 +2,7 @@
 LangGraph Node Implementations
 
 8 nodes in the workflow graph. Each reads from state, does work, returns updates.
-Integrates: LiteLLM, LightRAG, Calculator, ChartService, FinancialFormatter.
+Integrates: LiteLLM, LightRAG, Calculator, ChartService, DataFormatter.
 """
 
 import asyncio
@@ -17,12 +17,12 @@ from app.services.rag import search_apis
 from app.services.data_service import DataService
 from app.services.chart_service import recommend_and_generate_chart
 from app.utils.calculator import Calculator
-from app.utils.financial_fmt import FinancialFormatter
+from app.utils.formatter import DataFormatter
 from app.utils.time_series import TimeSeriesBuilder
 
 logger = structlog.get_logger()
 calculator = Calculator()
-formatter = FinancialFormatter()
+formatter = DataFormatter()
 
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
@@ -42,7 +42,7 @@ def _load_prompt(name: str) -> str:
 async def detect_intent(state: QAState) -> dict:
     """
     Decompose user query into sub-questions and classify type.
-    Uses AI — replaces V2's regex-based QueryTypeDetector.
+    Uses AI — replaces regex-based detection.
     """
     query = state["query"]
     prompt = _load_prompt("intent").replace("{current_time}", datetime.now().strftime("%Y-%m-%d %H:%M"))
@@ -76,7 +76,6 @@ async def classify_source(state: QAState) -> dict:
     """
     query_type = state["query_type"]
 
-    # Simple routing — can be enhanced with AI for ambiguous cases
     source_type = "api"
     if query_type == "knowledge":
         source_type = "knowledge_base"
@@ -91,10 +90,7 @@ async def classify_source(state: QAState) -> dict:
 # ========== Node 3: RAG Search ==========
 
 async def rag_search(state: QAState) -> dict:
-    """
-    Semantic search for matching API endpoints / knowledge base docs.
-    Replaces V2's 50+ regex patterns.
-    """
+    """Semantic search for matching API endpoints / knowledge base docs."""
     intents = state["intents"]
     all_matched = []
     max_confidence = 0.0
@@ -118,10 +114,7 @@ async def rag_search(state: QAState) -> dict:
 # ========== Node 4: Fetch Data (Parallel) ==========
 
 async def fetch_data(state: QAState) -> dict:
-    """
-    Call all matched APIs in parallel. Fan-out with asyncio.gather.
-    Each call protected by circuit breaker + cache.
-    """
+    """Call all matched APIs in parallel. Protected by circuit breaker + cache."""
     matched_apis = state["matched_apis"]
     svc = DataService()
 
@@ -164,19 +157,16 @@ async def check_sufficiency(state: QAState) -> dict:
     Check if fetched data is sufficient to answer the question.
     If not, trigger additional retrieval (Agentic RAG pattern).
     """
-    api_results = state["api_results"]
     quality = state.get("data_quality", {})
-
     completeness = quality.get("completeness", 0)
 
     if completeness >= 0.5:
         return {"processing_steps": state.get("processing_steps", []) + ["data_sufficient"]}
 
-    # Data insufficient — could trigger additional search
     logger.warning("Data insufficient", completeness=completeness)
     return {
         "processing_steps": state.get("processing_steps", []) + ["data_insufficient"],
-        "error": "部分数据获取失败，分析结果可能不完整",
+        "error": "Some data sources failed. Analysis may be incomplete.",
     }
 
 
@@ -191,36 +181,30 @@ async def analyze(state: QAState) -> dict:
     api_results = state["api_results"]
     query_type = state["query_type"]
 
-    # Run calculations if needed
     calc_results = _run_calculations(api_results, query_type)
 
-    # Build analysis context
     data_context = _format_data_with_sources(api_results)
     if calc_results:
-        data_context += f"\n\n计算结果：\n{json.dumps(calc_results, ensure_ascii=False, default=str)}"
+        data_context += f"\n\nCalculation results:\n{json.dumps(calc_results, ensure_ascii=False, default=str)}"
 
-    # Load analysis prompt
     prompt = _load_prompt("analysis").replace("{data}", data_context)
 
-    # Primary model analysis
     primary = await call_llm(model="primary", system=prompt, user=query, response_format="json")
 
     confidence = primary.get("confidence", 0.5)
     answer = primary.get("answer", str(primary))
     sources = primary.get("sources", [])
 
-    # Cross-validate if low confidence
     if confidence < 0.7:
         logger.info("Cross-validating", confidence=confidence)
         secondary = await call_llm(
             model="secondary",
-            system="验证以下分析是否合理。如有问题请修正，如合理请补充。简洁回答。",
-            user=f"问题：{query}\n分析：{answer}\n数据：{data_context[:1500]}",
+            system="Verify the following analysis. Correct if wrong, supplement if correct. Be concise.",
+            user=f"Question: {query}\nAnalysis: {answer}\nData: {data_context[:1500]}",
         )
-        answer += f"\n\n**补充验证：** {secondary}"
+        answer += f"\n\n**Cross-validation:** {secondary}"
         confidence = min(confidence + 0.15, 1.0)
 
-    # Format financial numbers in answer
     needs_review = confidence < 0.5
 
     logger.info("Analysis complete", confidence=round(confidence, 2), needs_review=needs_review)
@@ -248,9 +232,7 @@ async def generate_chart(state: QAState) -> dict:
 # ========== Node 8: Format Response + Source Attribution ==========
 
 async def format_response(state: QAState) -> dict:
-    """
-    Final formatting: add source attribution, format numbers, add metadata.
-    """
+    """Final formatting: add source attribution, format numbers, add metadata."""
     sources = []
     for api in state.get("matched_apis", []):
         sources.append({
@@ -281,7 +263,7 @@ async def fallback(state: QAState) -> dict:
 
     response = await call_llm(
         model="primary",
-        system="用户的问题无法匹配到数据接口。根据你的知识回答，但明确说明不是基于实时数据。",
+        system="The user's question couldn't be matched to a data source. Answer from general knowledge, but clearly state this is not based on real-time data.",
         user=query,
     )
 
@@ -300,48 +282,40 @@ def _run_calculations(api_results: dict, query_type: str) -> dict:
     """Run precise calculations on fetched data using Calculator."""
     calc = {}
 
-    # Finance calculations
-    finance = api_results.get("finance_summary", {})
-    if finance and "error" not in finance:
-        if finance.get("balance") and finance.get("daily_burn"):
-            calc["cash_runway"] = calculator.cash_runway(finance["balance"], finance["daily_burn"])
-        if finance.get("revenue") and finance.get("expenses"):
-            profit = float(finance["revenue"]) - float(finance["expenses"])
-            calc["profit"] = {
-                "revenue": formatter.format_currency(finance["revenue"]),
-                "expenses": formatter.format_currency(finance["expenses"]),
-                "profit": formatter.format_currency(profit),
-                "margin": formatter.format_percent(
-                    profit / float(finance["revenue"]) * 100 if finance["revenue"] else 0,
-                    show_trend=True,
-                ),
-            }
+    # Summary metrics calculations
+    metrics = api_results.get("summary_metrics", {})
+    if metrics and "error" not in metrics:
+        if metrics.get("budget_remaining") and metrics.get("daily_spend"):
+            calc["burn_rate"] = calculator.burn_rate(metrics["budget_remaining"], metrics["daily_spend"])
+        if metrics.get("revenue") and metrics.get("costs"):
+            calc["margin"] = calculator.margin(metrics["revenue"], metrics["costs"])
 
-    # Product expiry analysis
-    expiring = api_results.get("expiring_products", {})
-    if expiring and "error" not in expiring and expiring.get("products"):
-        calc["expiry_analysis"] = calculator.expiry_analysis(expiring["products"])
+    # Item distribution analysis
+    expiring = api_results.get("items_expiring", {})
+    if expiring and "error" not in expiring and expiring.get("items"):
+        calc["distribution"] = calculator.distribution_analysis(expiring["items"])
 
-    # User analysis
-    users = api_results.get("user_stats", api_results.get("user_data", {}))
+    # User engagement analysis
+    users = api_results.get("user_stats", {})
     if users and "error" not in users:
         total = users.get("total", users.get("total_users", 0))
         active = users.get("active", users.get("active_users", 0))
         new = users.get("new_today", users.get("new_users_today", 0))
         if total > 0:
-            calc["user_analysis"] = calculator.user_analysis(total, active, new)
+            calc["engagement"] = calculator.engagement_analysis(total, active, new)
 
     # Trend analysis from interval data
-    interval = api_results.get("product_interval", {})
-    if interval and "error" not in interval and interval.get("daily_breakdown"):
-        values = [d.get("count", 0) for d in interval["daily_breakdown"]]
-        calc["trend"] = calculator.trend(values)
-        calc["prediction"] = calculator.linear_prediction(values, future_steps=7)
+    interval = api_results.get("items_interval", api_results.get("item_stats", {}))
+    if interval and "error" not in interval:
+        breakdown = interval.get("daily_breakdown", interval.get("trend", []))
+        if breakdown:
+            values = [d.get("count", d.get("active", 0)) for d in breakdown]
+            calc["trend"] = calculator.trend(values)
+            calc["prediction"] = calculator.linear_prediction(values, future_steps=7)
 
-        # Anomaly detection
-        anomalies = TimeSeriesBuilder.detect_anomalies(values)
-        if anomalies:
-            calc["anomalies"] = anomalies
+            anomalies = TimeSeriesBuilder.detect_anomalies(values)
+            if anomalies:
+                calc["anomalies"] = anomalies
 
     return calc
 
@@ -351,7 +325,7 @@ def _format_data_with_sources(api_results: dict) -> str:
     parts = []
     for name, data in api_results.items():
         if isinstance(data, dict) and "error" in data:
-            parts.append(f"[{name}] ❌ 数据获取失败: {data['error']}")
+            parts.append(f"[{name}] ❌ Data fetch failed: {data['error']}")
         else:
             parts.append(f"[{name}] ✅\n{json.dumps(data, ensure_ascii=False, indent=2, default=str)}")
     return "\n\n".join(parts)

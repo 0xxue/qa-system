@@ -1,10 +1,11 @@
 """
-Unified Financial Calculator
+Unified Calculator
 
-12 types of precise calculations using Decimal for financial accuracy.
+High-precision calculations using Decimal.
 AI can't do math reliably — this module handles all numerical computations.
 
-Migrated from V2's UnifiedCalculator, adapted for V3 architecture.
+Provides: statistics, growth/trend analysis, ratios, predictions, aggregation.
+Industry-agnostic — works for any domain that needs precise numbers.
 """
 
 from decimal import Decimal, ROUND_HALF_UP
@@ -16,8 +17,7 @@ logger = structlog.get_logger()
 
 class Calculator:
     """
-    High-precision financial calculator.
-    All monetary calculations use Decimal to avoid floating-point errors.
+    High-precision calculator using Decimal to avoid floating-point errors.
     """
 
     def __init__(self, precision: int = 2):
@@ -81,70 +81,47 @@ class Calculator:
             "larger": "a" if a > b else "b" if b > a else "equal",
         }
 
-    # ========== Financial Calculations ==========
+    # ========== Ratio & Rate ==========
 
-    def compound_interest(self, principal, rate, periods: int, compounds_per_period: int = 1) -> dict:
+    def ratio(self, numerator, denominator, name: str = "ratio") -> dict:
+        """Generic ratio calculation."""
+        n = self._d(numerator)
+        d = self._d(denominator)
+        if d == 0:
+            return {name: Decimal("0"), "status": "division_by_zero"}
+        r = n / d
+        return {name: self._round(r)}
+
+    def burn_rate(self, balance, daily_cost) -> dict:
         """
-        Compound interest calculation.
-        A = P(1 + r/n)^(nt)
-        """
-        p = self._d(principal)
-        r = self._d(rate) / 100
-        n = self._d(compounds_per_period)
-        t = self._d(periods)
-
-        amount = p * (1 + r / n) ** (n * t)
-        interest = amount - p
-
-        return {
-            "principal": self._round(p),
-            "rate": self._round(self._d(rate)),
-            "periods": periods,
-            "final_amount": self._round(amount),
-            "total_interest": self._round(interest),
-        }
-
-    def roi(self, investment, revenue) -> dict:
-        """Return on Investment: (revenue - investment) / investment * 100."""
-        inv = self._d(investment)
-        rev = self._d(revenue)
-        if inv == 0:
-            return {"roi": Decimal("0"), "profit": Decimal("0")}
-        profit = rev - inv
-        roi_pct = profit / inv * 100
-        return {
-            "investment": self._round(inv),
-            "revenue": self._round(rev),
-            "profit": self._round(profit),
-            "roi": self._round(roi_pct),
-        }
-
-    def cash_runway(self, balance, daily_burn) -> dict:
-        """
-        How many days can the fund last?
-        runway = balance / daily_burn
+        How many days can a resource last?
+        Applicable to budgets, inventory, storage, etc.
         """
         bal = self._d(balance)
-        burn = self._d(daily_burn)
-        if burn == 0:
-            return {"days": -1, "status": "no_burn"}
-        days = bal / burn
+        cost = self._d(daily_cost)
+        if cost == 0:
+            return {"days": -1, "status": "no_consumption"}
+        days = bal / cost
         return {
             "balance": self._round(bal),
-            "daily_burn": self._round(burn),
+            "daily_cost": self._round(cost),
             "days_remaining": int(days),
             "weeks_remaining": int(days / 7),
             "status": "critical" if days < 7 else "warning" if days < 30 else "healthy",
         }
 
-    def financial_ratio(self, numerator, denominator, ratio_name: str = "ratio") -> dict:
-        """Generic financial ratio calculation."""
-        n = self._d(numerator)
-        d = self._d(denominator)
-        if d == 0:
-            return {ratio_name: Decimal("0"), "status": "division_by_zero"}
-        ratio = n / d
-        return {ratio_name: self._round(ratio)}
+    def margin(self, income, cost) -> dict:
+        """Calculate margin: (income - cost) / income * 100."""
+        inc = self._d(income)
+        c = self._d(cost)
+        profit = inc - c
+        pct = (profit / inc * 100) if inc != 0 else Decimal("0")
+        return {
+            "income": self._round(inc),
+            "cost": self._round(c),
+            "profit": self._round(profit),
+            "margin_pct": self._round(pct),
+        }
 
     # ========== Prediction ==========
 
@@ -160,7 +137,6 @@ class Calculator:
         x_vals = list(range(n))
         y_vals = [self._d(v) for v in values]
 
-        # Linear regression: y = mx + b
         sum_x = sum(x_vals)
         sum_y = sum(y_vals)
         sum_xy = sum(self._d(x) * y for x, y in zip(x_vals, y_vals))
@@ -185,31 +161,31 @@ class Calculator:
             "trend": "up" if m > 0 else "down" if m < 0 else "flat",
         }
 
-    # ========== Business Analytics ==========
+    # ========== Analytics ==========
 
-    def expiry_analysis(self, products: list) -> dict:
-        """Analyze product expiry distribution."""
-        total = len(products)
+    def distribution_analysis(self, items: list, amount_key: str = "amount") -> dict:
+        """Analyze distribution of items by amount."""
+        total = len(items)
         if total == 0:
-            return {"total": 0, "summary": "No products"}
+            return {"total": 0, "summary": "No items"}
 
-        total_amount = sum(self._d(p.get("amount", 0)) for p in products)
+        total_amount = sum(self._d(p.get(amount_key, 0)) for p in items)
         avg_amount = total_amount / total
 
         return {
-            "total_products": total,
+            "total_items": total,
             "total_amount": self._round(total_amount),
             "average_amount": self._round(avg_amount),
         }
 
-    def user_analysis(self, total_users: int, active_users: int, new_users: int) -> dict:
-        """User engagement metrics."""
-        active_rate = self._d(active_users) / self._d(total_users) * 100 if total_users > 0 else Decimal("0")
-        new_rate = self._d(new_users) / self._d(total_users) * 100 if total_users > 0 else Decimal("0")
+    def engagement_analysis(self, total: int, active: int, new: int) -> dict:
+        """Engagement metrics (users, devices, entities, etc.)."""
+        active_rate = self._d(active) / self._d(total) * 100 if total > 0 else Decimal("0")
+        new_rate = self._d(new) / self._d(total) * 100 if total > 0 else Decimal("0")
         return {
-            "total": total_users,
-            "active": active_users,
-            "new": new_users,
+            "total": total,
+            "active": active,
+            "new": new,
             "active_rate": self._round(active_rate),
             "new_rate": self._round(new_rate),
         }

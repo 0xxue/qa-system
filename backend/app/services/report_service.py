@@ -13,11 +13,11 @@ import json
 import structlog
 from datetime import datetime
 from typing import Optional
-from app.utils.financial_fmt import FinancialFormatter
+from app.utils.formatter import DataFormatter
 
 logger = structlog.get_logger()
 
-fmt = FinancialFormatter()
+fmt = DataFormatter()
 
 
 class ReportGenerator:

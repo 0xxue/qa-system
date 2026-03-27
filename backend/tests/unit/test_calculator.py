@@ -1,4 +1,4 @@
-"""Unit tests for the financial calculator."""
+"""Unit tests for the calculator."""
 
 import pytest
 from decimal import Decimal
@@ -42,31 +42,30 @@ class TestBasicStats:
         assert result["larger"] == "a"
 
 
-class TestFinancial:
+class TestRatios:
 
-    def test_compound_interest(self, calc):
-        result = calc.compound_interest(10000, 10, 1)
-        assert result["final_amount"] == Decimal("11000.00")
-        assert result["total_interest"] == Decimal("1000.00")
-
-    def test_roi(self, calc):
-        result = calc.roi(10000, 15000)
-        assert result["profit"] == Decimal("5000.00")
-        assert result["roi"] == Decimal("50.00")
-
-    def test_cash_runway_healthy(self, calc):
-        result = calc.cash_runway(1000000, 10000)
+    def test_burn_rate_healthy(self, calc):
+        result = calc.burn_rate(1000000, 10000)
         assert result["days_remaining"] == 100
         assert result["status"] == "healthy"
 
-    def test_cash_runway_critical(self, calc):
-        result = calc.cash_runway(50000, 10000)
+    def test_burn_rate_critical(self, calc):
+        result = calc.burn_rate(50000, 10000)
         assert result["days_remaining"] == 5
         assert result["status"] == "critical"
 
-    def test_cash_runway_zero_burn(self, calc):
-        result = calc.cash_runway(1000000, 0)
-        assert result["status"] == "no_burn"
+    def test_burn_rate_zero_cost(self, calc):
+        result = calc.burn_rate(1000000, 0)
+        assert result["status"] == "no_consumption"
+
+    def test_margin(self, calc):
+        result = calc.margin(15000, 10000)
+        assert result["profit"] == Decimal("5000.00")
+        assert result["margin_pct"] == Decimal("33.33")
+
+    def test_ratio(self, calc):
+        result = calc.ratio(150, 200, "conversion_rate")
+        assert result["conversion_rate"] == Decimal("0.75")
 
 
 class TestPrediction:
@@ -80,6 +79,20 @@ class TestPrediction:
     def test_linear_prediction_insufficient(self, calc):
         result = calc.linear_prediction([10])
         assert "error" in result
+
+
+class TestAnalytics:
+
+    def test_distribution(self, calc):
+        items = [{"amount": 100}, {"amount": 200}, {"amount": 300}]
+        result = calc.distribution_analysis(items)
+        assert result["total_items"] == 3
+        assert result["average_amount"] == Decimal("200.00")
+
+    def test_engagement(self, calc):
+        result = calc.engagement_analysis(1000, 300, 50)
+        assert result["active_rate"] == Decimal("30.00")
+        assert result["new_rate"] == Decimal("5.00")
 
 
 class TestAggregation:

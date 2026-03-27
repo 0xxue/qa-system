@@ -2,7 +2,7 @@
 Time Series Builder
 
 Handles missing data, trend detection, and anomaly identification
-for financial time series data.
+for time series data.
 """
 
 from datetime import datetime, timedelta
