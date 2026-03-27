@@ -7,9 +7,9 @@ export function MessageBubble({ message: m }: { message: Message }) {
   const isUser = m.role === 'user';
 
   return (
-    <div className="animate-card-in" style={{ display: 'flex', gap: 10, flexDirection: isUser ? 'row-reverse' : 'row' }}>
+    <div className="animate-card-in m-row" style={{ display: 'flex', gap: 10, flexDirection: isUser ? 'row-reverse' : 'row' }}>
       {/* Avatar */}
-      <div className="font-mono" style={{
+      <div className="font-mono m-av" style={{
         width: 34, height: 34, flexShrink: 0,
         border: `2px solid ${isUser ? 'var(--ink)' : 'var(--orange)'}`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -21,7 +21,7 @@ export function MessageBubble({ message: m }: { message: Message }) {
       </div>
 
       {/* Bubble */}
-      <div style={{
+      <div className="m-bub" style={{
         maxWidth: '68%', padding: '11px 15px', fontSize: 13.5, lineHeight: 1.65,
         wordBreak: 'break-word', border: `1.5px solid ${isUser ? 'var(--ink)' : 'var(--orange)'}`,
         background: isUser ? 'var(--ink)' : 'rgba(212, 82, 26, 0.04)',

@@ -227,7 +227,7 @@ export default function ChatPage() {
         </div>
 
         {/* Input */}
-        <div style={{
+        <div className="chat-input-zone" style={{
           padding: '14px 24px', borderTop: '2px solid var(--ink)',
           display: 'flex', alignItems: 'flex-end', gap: 10, background: 'var(--cream)',
         }}>

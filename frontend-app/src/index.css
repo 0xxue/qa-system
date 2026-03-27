@@ -138,25 +138,21 @@ body::before {
 .stagger-4 { animation-delay: 0.2s; }
 
 /* ══════════════════════════════════════
-   MOBILE RESPONSIVE
+   MOBILE RESPONSIVE (≤768px)
 ══════════════════════════════════════ */
 
 @media (max-width: 768px) {
-  /* App shell: column layout */
+  /* ── Layout: sidebar → bottom bar ── */
   .app-shell { flex-direction: column !important; }
-
-  /* Desktop sidebar hidden */
   .sidebar-desktop { display: none !important; }
-
-  /* Mobile bottom bar visible */
   .sidebar-mobile {
     display: flex !important;
     width: 100% !important;
-    height: 56px !important;
+    height: 52px !important;
     flex-direction: row !important;
     border-top: 2px solid var(--ink) !important;
     border-right: none !important;
-    padding: 0 8px !important;
+    padding: 0 !important;
     order: 2 !important;
     justify-content: space-around !important;
     align-items: center !important;
@@ -164,37 +160,117 @@ body::before {
     flex-shrink: 0 !important;
   }
 
-  /* Top strip compact */
-  .top-strip-title { font-size: 18px !important; letter-spacing: 2px !important; }
+  /* ── Top strip: compact ── */
+  .top-strip-title { font-size: 16px !important; letter-spacing: 2px !important; }
   .top-strip-label { display: none !important; }
   .top-strip-status { display: none !important; }
 
-  /* Chat: hide history rail */
+  /* ── Chat page ── */
   .hist-rail { display: none !important; }
 
-  /* Chat input */
-  .chat-input-zone { padding: 8px 12px !important; }
-
-  /* KB: stack vertically */
-  .kb-left {
-    width: 100% !important;
-    height: 140px !important;
-    border-right: none !important;
-    border-bottom: 1.5px solid var(--line) !important;
+  /* Messages: wider bubbles, smaller font */
+  .m-row { gap: 6px !important; }
+  .m-bub {
+    max-width: 88% !important;
+    font-size: 13px !important;
+    padding: 9px 12px !important;
+  }
+  .m-av {
+    width: 28px !important;
+    height: 28px !important;
+    font-size: 8px !important;
   }
 
-  /* Dashboard */
+  /* Chat input area */
+  .chat-input-zone {
+    padding: 8px 10px !important;
+    gap: 6px !important;
+  }
+  .chat-input-zone textarea {
+    font-size: 14px !important;
+    padding: 8px 10px !important;
+  }
+  .chat-input-zone button {
+    width: 38px !important;
+    height: 38px !important;
+  }
+
+  /* Empty state */
+  .launch-graphic {
+    width: 100px !important;
+    height: 100px !important;
+  }
+  .empty-title {
+    font-size: 24px !important;
+  }
+  .quick-q {
+    flex-direction: column !important;
+    gap: 6px !important;
+  }
+
+  /* ── KB page: stack vertically ── */
+  .kb-left {
+    width: 100% !important;
+    max-height: 180px !important;
+    border-right: none !important;
+    border-bottom: 1.5px solid var(--line) !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* ── Dashboard ── */
   .stat-cards { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; }
   .charts-grid { grid-template-columns: 1fr !important; }
+  .dash-title { font-size: 28px !important; letter-spacing: 3px !important; }
 
-  /* Bot smaller on mobile */
-  [data-bot-container] { transform: scale(0.6) !important; transform-origin: bottom right !important; }
+  /* ── Settings: full width ── */
+  .setting-section { padding: 14px !important; }
+
+  /* ── Login: full width ── */
+  .login-box {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 16px !important;
+    box-shadow: none !important;
+  }
+
+  /* ── Bot: smaller + bottom right ── */
+  [data-bot-container] {
+    transform: scale(0.55) !important;
+    transform-origin: bottom right !important;
+  }
+
+  /* ── Toast: above bottom bar ── */
+  .toast-container {
+    bottom: 60px !important;
+    top: auto !important;
+  }
+
+  /* ── Hide decorative background text ── */
+  #geo-lines text { display: none; }
 }
+
+/* ══════════════════════════════════════
+   SMALL PHONES (≤400px)
+══════════════════════════════════════ */
 
 @media (max-width: 400px) {
-  .stat-cards { grid-template-columns: 1fr !important; }
+  /* Nav: icons only */
   .sidebar-mobile span { display: none !important; }
+  .sidebar-mobile { height: 46px !important; }
+
+  /* Single column everything */
+  .stat-cards { grid-template-columns: 1fr !important; }
+
+  /* Wider bubbles */
+  .m-bub { max-width: 94% !important; font-size: 12.5px !important; }
+
+  /* Top strip: title only */
+  .top-strip-title { font-size: 14px !important; }
 }
+
+/* ══════════════════════════════════════
+   DESKTOP: hide mobile bar
+══════════════════════════════════════ */
 
 @media (min-width: 769px) {
   .sidebar-mobile { display: none !important; }
