@@ -17,11 +17,11 @@ export default function KnowledgeBasePage() {
   const [newDesc, setNewDesc] = useState('');
 
   useEffect(() => {
-    listCollections().then(setCollections).catch(() => {});
+    listCollections().then((data: any) => setCollections(data?.collections || data || [])).catch(() => {});
   }, []);
 
   useEffect(() => {
-    if (selectedId) listDocuments(selectedId).then(setDocs).catch(() => setDocs([]));
+    if (selectedId) listDocuments(selectedId).then((data: any) => setDocs(data?.documents || data || [])).catch(() => setDocs([]));
   }, [selectedId]);
 
   const handleCreate = async () => {

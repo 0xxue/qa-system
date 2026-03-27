@@ -6,19 +6,29 @@ POST /auth/register   → Create account
 POST /auth/refresh    → Refresh expired access token
 GET  /auth/me         → Get current user info
 PUT  /auth/me         → Update profile
+GET  /auth/settings   → Get user settings
+PUT  /auth/settings   → Save user settings
 """
 
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
+from sqlalchemy import text
+
 from app.services.auth import (
     create_tokens, verify_password, hash_password,
     get_current_user, refresh_access_token,
 )
-from app.services.database import _session_factory
-from sqlalchemy import text
 
 router = APIRouter()
+
+
+def _get_session_factory():
+    """Get session factory at runtime (after init_db has been called)."""
+    from app.services.database import _session_factory
+    if not _session_factory:
+        raise HTTPException(status_code=503, detail="Database not available")
+    return _session_factory
 
 
 # ── Schemas ──
@@ -54,10 +64,8 @@ class TokenResponse(BaseModel):
 @router.post("/login", response_model=TokenResponse)
 async def login(request: LoginRequest):
     """Login with username and password. Returns JWT token pair."""
-    if not _session_factory:
-        raise HTTPException(status_code=503, detail="Database not available")
-
-    async with _session_factory() as session:
+    sf = _get_session_factory()
+    async with sf() as session:
         result = await session.execute(
             text("SELECT id, username, password_hash, role FROM users WHERE username = :u"),
             {"u": request.username},
@@ -74,10 +82,8 @@ async def login(request: LoginRequest):
 @router.post("/register")
 async def register(request: RegisterRequest):
     """Register a new user account. Default role: user."""
-    if not _session_factory:
-        raise HTTPException(status_code=503, detail="Database not available")
-
-    async with _session_factory() as session:
+    sf = _get_session_factory()
+    async with sf() as session:
         result = await session.execute(
             text("SELECT id FROM users WHERE username = :u"),
             {"u": request.username},
@@ -104,29 +110,22 @@ async def refresh(request: RefreshRequest):
 @router.get("/me")
 async def get_me(user=Depends(get_current_user)):
     """Get current user info."""
-    return {
-        "id": user.id,
-        "username": user.username,
-        "role": user.role,
-    }
+    return {"id": user.id, "username": user.username, "role": user.role}
 
 
 @router.put("/me")
 async def update_me(request: UpdateProfileRequest, user=Depends(get_current_user)):
     """Update current user profile."""
-    if not _session_factory:
-        raise HTTPException(status_code=503, detail="Database not available")
-
+    sf = _get_session_factory()
     updates = {}
     if request.email is not None:
         updates["email"] = request.email
     if request.department is not None:
         updates["department"] = request.department
-
     if not updates:
         return {"message": "Nothing to update"}
 
-    async with _session_factory() as session:
+    async with sf() as session:
         set_clause = ", ".join(f"{k} = :{k}" for k in updates)
         updates["uid"] = int(user.id) if str(user.id).isdigit() else 0
         await session.execute(text(f"UPDATE users SET {set_clause} WHERE id = :uid"), updates)
@@ -135,14 +134,13 @@ async def update_me(request: UpdateProfileRequest, user=Depends(get_current_user
     return {"message": "Profile updated"}
 
 
-# ── User Settings (per-user config) ──
+# ── User Settings ──
 
 @router.get("/settings")
 async def get_settings_api(user=Depends(get_current_user)):
-    """Get current user's settings."""
-    if not _session_factory:
-        return {}
-    async with _session_factory() as session:
+    """Get current user's settings (model, language, bot config, etc.)."""
+    sf = _get_session_factory()
+    async with sf() as session:
         result = await session.execute(
             text("SELECT settings_json FROM user_settings WHERE user_id = :uid"),
             {"uid": int(user.id)},
@@ -153,13 +151,10 @@ async def get_settings_api(user=Depends(get_current_user)):
 
 @router.put("/settings")
 async def save_settings_api(settings: dict, user=Depends(get_current_user)):
-    """Save current user's settings (model, language, bot config, etc.)."""
-    if not _session_factory:
-        raise HTTPException(status_code=503, detail="Database not available")
-
+    """Save current user's settings."""
+    sf = _get_session_factory()
     import json
-    async with _session_factory() as session:
-        # Upsert
+    async with sf() as session:
         result = await session.execute(
             text("SELECT id FROM user_settings WHERE user_id = :uid"),
             {"uid": int(user.id)},
