@@ -121,14 +121,15 @@ export function BotContainer() {
           position: 'fixed',
           left: pos.x + (dragging ? 0 : float.x),
           top: pos.y + (dragging ? 0 : float.y),
-          width: size,
-          height: size,
+          width: 180,
+          height: 180,
           zIndex: 1000,
           cursor: dragging ? 'grabbing' : 'pointer',
           userSelect: 'none',
           transition: dragging ? 'none' : 'left 0.7s cubic-bezier(0.34,1.2,0.64,1), top 0.7s cubic-bezier(0.34,1.2,0.64,1)',
           filter: `drop-shadow(0 0 20px rgba(212, 82, 26, ${dragging ? 0.5 : 0.25}))`,
-          transform: dragging ? 'scale(1.08)' : '',
+          transform: `scale(${size / 180})${dragging ? ' scale(1.08)' : ''}`,
+          transformOrigin: 'center center',
           overflow: 'visible',
         }}
       >

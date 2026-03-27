@@ -33,9 +33,9 @@ html, body, #app {
   width: 100% !important;
   height: 100% !important;
   overflow: hidden !important;
-  background: #f0e8d8 !important;
-  background-color: #f0e8d8 !important;
-  color: #1a1408 !important;
+  background: var(--cream) !important;
+  background-color: var(--cream) !important;
+  color: var(--ink) !important;
   font-family: 'Noto Sans SC', sans-serif !important;
 }
 

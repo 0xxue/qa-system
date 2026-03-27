@@ -3,10 +3,12 @@ import { useState, useEffect } from 'react';
 import ChatPage from './pages/Chat';
 import KnowledgeBasePage from './pages/KnowledgeBase';
 import DashboardPage from './pages/Dashboard';
+import SettingsPage from './pages/Settings';
+import LoginPage from './pages/Login';
 import { ToastContainer } from './components/ui/Toast';
 import { BotContainer } from './components/bot/BotContainer';
 import { GeoLines, DustCanvas } from './components/layout/Background';
-import { MessageSquare, Database, BarChart3 } from 'lucide-react';
+import { MessageSquare, Database, BarChart3, Settings } from 'lucide-react';
 
 /* ══════════════════════════════════════
    NEXUS Sidebar
@@ -17,6 +19,7 @@ function Sidebar() {
     { to: '/chat', icon: MessageSquare, label: 'Chat' },
     { to: '/kb', icon: Database, label: 'Know' },
     { to: '/dashboard', icon: BarChart3, label: 'Dash' },
+    { to: '/settings', icon: Settings, label: 'Set' },
   ];
 
   return (
@@ -157,9 +160,11 @@ export default function App() {
           <div style={{ flex: 1, overflow: 'auto' }}>
             <Routes>
               <Route path="/" element={<Navigate to="/chat" replace />} />
+              <Route path="/login" element={<LoginPage />} />
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/kb" element={<KnowledgeBasePage />} />
               <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
             </Routes>
           </div>
         </div>
