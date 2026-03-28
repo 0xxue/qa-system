@@ -11,6 +11,7 @@ from app.api.v1.data import router as data_router
 from app.api.v1.kb import router as kb_router
 from app.api.v1.admin import router as admin_router
 from app.api.v1.ws import router as ws_router
+from app.api.v1.bot import router as bot_router
 
 api_router = APIRouter()
 
@@ -21,3 +22,4 @@ api_router.include_router(data_router, prefix="/data", tags=["Data"])
 api_router.include_router(kb_router, prefix="/kb", tags=["Knowledge Base"])
 api_router.include_router(admin_router, prefix="/admin", tags=["Admin"])
 api_router.include_router(ws_router, tags=["Bot WebSocket"])
+api_router.include_router(bot_router, prefix="/bot", tags=["Bot"])

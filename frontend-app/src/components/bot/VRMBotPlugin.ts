@@ -180,6 +180,12 @@ export function createVRMBot(modelUrl = '/model.vrm'): BotPlugin {
       window.addEventListener('mousemove', onMouseMove);
     },
 
+    resize(newSize: number) {
+      if (renderer) {
+        renderer.setSize(newSize, newSize);
+      }
+    },
+
     unmount() {
       cancelAnimationFrame(animId);
       window.removeEventListener('mousemove', onMouseMove);

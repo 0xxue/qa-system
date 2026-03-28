@@ -32,14 +32,60 @@ export function BotContainer() {
     return { x: window.innerWidth - s - 30, y: window.innerHeight - s - (window.innerWidth <= 768 ? 80 : 70) };
   });
 
+  const posOverridden = useRef(false); // true = user dragged or loaded from DB, don't reset on resize
+
   useEffect(() => {
     const onResize = () => {
-      const s = getMobileSize();
+      if (posOverridden.current) return; // Don't reset user's custom position
+      const s = window.innerWidth <= 768 ? 100 : size;
       setPos({ x: window.innerWidth - s - 30, y: window.innerHeight - s - (window.innerWidth <= 768 ? 80 : 70) });
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, [size]);
+
+  // ── Load persisted preferences on mount ──
+  const prefsLoaded = useRef(false);
+  const [ready, setReady] = useState(false); // Hide bot until prefs loaded (prevents position flash)
+  useEffect(() => {
+    if (prefsLoaded.current) return;
+    prefsLoaded.current = true;
+    const token = localStorage.getItem('token');
+    if (!token && !localStorage.getItem('demo_mode')) {
+      setReady(true);
+      return;
+    }
+    fetch('/api/v1/bot/preferences', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then(r => r.json())
+      .then((prefs: any) => {
+        if (prefs.position_x != null && prefs.position_y != null) {
+          setPos({ x: prefs.position_x, y: prefs.position_y });
+          posOverridden.current = true;
+        }
+        if (prefs.bot_size && prefs.bot_size !== useBotStore.getState().size) {
+          useBotStore.getState().setSize(prefs.bot_size);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setReady(true));
+  }, []);
+
+  // ── Save position on change (debounced) ──
+  const saveTimer = useRef<ReturnType<typeof setTimeout>>();
+  const savePrefs = useCallback((data: Record<string, any>) => {
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      fetch('/api/v1/bot/preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(data),
+      }).catch(() => {});
+    }, 1000);
+  }, []);
 
   // ── State ──
   const [dragging, setDragging] = useState(false);
@@ -279,14 +325,69 @@ export function BotContainer() {
         }, 8000); // After welcome greeting
       }
     });
+
+    // Chat: summarize conversation when user clicks history
+    botEngine.on('chat:load_conversation', async (data: any) => {
+      if (!data) return;
+      const say = (window as any).__botSay;
+      const setE = setEmotionRef.current;
+      const fly = flyToRef.current;
+
+      // Fly to the clicked conversation item
+      if (data.rect) {
+        fly(data.rect.right + 40, data.rect.top + data.rect.height / 2);
+      }
+      await new Promise(r => setTimeout(r, 600));
+
+      setE('thinking');
+      say?.(`Loading "${data.title || 'conversation'}"...`, 2000);
+      await new Promise(r => setTimeout(r, 1500));
+
+      // Fetch summary from backend
+      try {
+        const res = await fetch(`/api/v1/qa/conversations/${data.convId}/summary`, {
+          headers: {
+            ...(localStorage.getItem('token') ? { Authorization: `Bearer ${localStorage.getItem('token')}` } : {}),
+          },
+        });
+        const result = await res.json();
+        if (result.summary) {
+          setE('talking');
+          // Show summary in speech bubble (longer duration for reading)
+          const duration = Math.max(4000, Math.min(result.summary.length * 40, 10000));
+          say?.(result.summary, duration);
+          await new Promise(r => setTimeout(r, duration + 500));
+        } else {
+          setE('happy');
+          say?.('This conversation is pretty short, take a look!', 2500);
+          await new Promise(r => setTimeout(r, 3000));
+        }
+      } catch {
+        setE('happy');
+        say?.('Conversation loaded!', 2000);
+        await new Promise(r => setTimeout(r, 2500));
+      }
+
+      // Return to default position
+      const def = getDefaultPos();
+      fly(def.x + 90, def.y + 90);
+      setE('idle');
+    });
   }, []); // Run once — refs keep handlers fresh
 
   // ── Mount Plugin ──
   useEffect(() => {
-    if (!plugin || !containerRef.current || !enabled) return;
+    if (!plugin || !containerRef.current || !enabled || !ready) return;
     plugin.mount(containerRef.current);
     return () => plugin.unmount();
-  }, [plugin, enabled]);
+  }, [plugin, enabled, ready]);
+
+  // ── Resize Plugin when size changes ──
+  useEffect(() => {
+    if (!plugin) return;
+    const s = window.innerWidth <= 768 ? 100 : size;
+    plugin.resize?.(s);
+  }, [plugin, size]);
 
   // ── Sync Emotion ──
   useEffect(() => {
@@ -584,13 +685,18 @@ export function BotContainer() {
       }
     };
 
-    const onUp = () => {
+    const onUp = (ev: MouseEvent) => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
       if (isDragStarted.current) {
         setDragging(false);
         setEmotion('idle');
         (window as any).__botSay?.('Put me down~ ✦', 2000);
+        // Persist new position — compute from last mouse position
+        const finalX = Math.max(10, Math.min(window.innerWidth - size - 10, ev.clientX - dragOffset.current.x));
+        const finalY = Math.max(10, Math.min(window.innerHeight - size - 10, ev.clientY - dragOffset.current.y));
+        posOverridden.current = true;
+        savePrefs({ position_x: finalX, position_y: finalY });
       }
     };
 
@@ -616,7 +722,7 @@ export function BotContainer() {
     return () => cancelAnimationFrame(raf);
   }, [dragging]);
 
-  if (!enabled) return null;
+  if (!enabled || !ready) return null;
 
   return (
     <>

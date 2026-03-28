@@ -43,14 +43,29 @@ async def detect_intent(state: QAState) -> dict:
     """
     Decompose user query into sub-questions and classify type.
     Uses AI — replaces regex-based detection.
+    Includes conversation history for multi-turn context.
     """
     query = state["query"]
     prompt = _load_prompt("intent").replace("{current_time}", datetime.now().strftime("%Y-%m-%d %H:%M"))
 
+    # Build context-aware user message
+    history = state.get("conversation_history", [])
+    summary = state.get("conversation_summary", "")
+    user_msg = query
+    if summary or history:
+        context_parts = []
+        if summary:
+            context_parts.append(f"[Conversation summary so far]: {summary}")
+        if history:
+            recent = "\n".join(f"{m['role']}: {m['content'][:200]}" for m in history[-6:])
+            context_parts.append(f"[Recent messages]:\n{recent}")
+        context_parts.append(f"[Current question]: {query}")
+        user_msg = "\n\n".join(context_parts)
+
     response = await call_llm(
         model="primary",
         system=prompt,
-        user=query,
+        user=user_msg,
         response_format="json",
     )
 
@@ -240,7 +255,17 @@ async def analyze(state: QAState) -> dict:
     data_context = "\n\n---\n\n".join(data_sections)
     prompt = _load_prompt("analysis").replace("{data}", data_context)
 
-    primary = await call_llm(model="primary", system=prompt, user=query, response_format="json")
+    # Build multi-turn history for analysis context
+    history = state.get("conversation_history", [])
+    summary = state.get("conversation_summary", "")
+    llm_history = []
+    if summary:
+        llm_history.append({"role": "user", "content": f"[Previous conversation summary]: {summary}"})
+        llm_history.append({"role": "assistant", "content": "Understood, I'll consider the conversation context."})
+    if history:
+        llm_history.extend(history[-6:])  # Last 3 turns (6 messages)
+
+    primary = await call_llm(model="primary", system=prompt, user=query, history=llm_history if llm_history else None, response_format="json")
 
     confidence = primary.get("confidence", 0.5)
     answer = primary.get("answer", str(primary))
@@ -312,10 +337,15 @@ async def fallback(state: QAState) -> dict:
     query = state["query"]
     logger.warning("Fallback triggered", query=query[:50])
 
+    # Include history for multi-turn fallback
+    history = state.get("conversation_history", [])
+    llm_history = history[-6:] if history else None
+
     response = await call_llm(
         model="primary",
         system="The user's question couldn't be matched to a data source. Answer from general knowledge, but clearly state this is not based on real-time data. IMPORTANT: Reply in the same language the user used.",
         user=query,
+        history=llm_history,
     )
 
     return {

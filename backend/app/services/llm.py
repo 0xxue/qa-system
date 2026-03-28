@@ -41,6 +41,7 @@ async def call_llm(
     model: str = "primary",
     system: str = "",
     user: str = "",
+    history: list[dict] = None,
     response_format: Optional[str] = None,
     json_schema: Optional[dict] = None,
     temperature: float = 0.3,
@@ -52,6 +53,7 @@ async def call_llm(
         model: "primary" / "secondary" / "fallback" or direct model string
         system: System prompt
         user: User message
+        history: Conversation history [{role, content}] inserted between system and user
         response_format: "json" for JSON response
         temperature: Creativity level (0-1)
 
@@ -63,6 +65,8 @@ async def call_llm(
     messages = []
     if system:
         messages.append({"role": "system", "content": system})
+    if history:
+        messages.extend(history)
     messages.append({"role": "user", "content": user})
 
     try:

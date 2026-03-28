@@ -28,9 +28,15 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from app.services.bot.ws_manager import bot_ws_manager
 from app.services.bot.brain import think as bot_think, get_persona, set_persona, BOT_PERSONAS
 from app.services.bot.emotion import get_emotion
+from app.services.bot.persistence import BotPersistenceService
 
 logger = structlog.get_logger()
 router = APIRouter()
+
+
+def _get_sf():
+    from app.services.database import _session_factory
+    return _session_factory
 
 # Poke responses
 POKE_RESPONSES = [
@@ -130,9 +136,24 @@ async def bot_websocket(ws: WebSocket, token: str = Query(default="")):
                 # Show thinking emotion
                 await send({"type": "bot_emotion", "emotion": "thinking"})
 
-                # Bot thinks (LLM Agent loop)
-                context = {"page": data.get("page"), "mode": state.mode}
+                # Persist user message + load history for brain context
+                bot_history = []
+                sf = _get_sf()
+                uid = int(user.id) if str(user.id).isdigit() else 1
+                if sf:
+                    try:
+                        async with sf() as session:
+                            svc = BotPersistenceService(session)
+                            await svc.save_user_message(uid, message)
+                            bot_history = await svc.get_context_for_brain(uid)
+                    except Exception as e:
+                        logger.warning("Bot persist failed", error=str(e))
+
+                # Bot thinks (LLM Agent loop with short-term memory)
+                context = {"page": data.get("page"), "mode": state.mode, "history": bot_history}
                 response = await bot_think(message, user, context)
+
+                tool_calls_log = [{"tool": tc["tool"], "success": not tc["result"].get("error")} for tc in response.tool_calls]
 
                 # Send response
                 await send({
@@ -140,12 +161,43 @@ async def bot_websocket(ws: WebSocket, token: str = Query(default="")):
                     "content": response.content,
                     "emotion": response.emotion,
                     "action": response.action,
-                    "tool_calls": [{"tool": tc["tool"], "success": not tc["result"].get("error")} for tc in response.tool_calls],
+                    "tool_calls": tool_calls_log,
                 })
+
+                # Persist bot response
+                if sf:
+                    try:
+                        async with sf() as session:
+                            svc = BotPersistenceService(session)
+                            await svc.save_bot_response(
+                                uid, response.content,
+                                emotion=response.emotion,
+                                action=response.action,
+                                tool_calls=tool_calls_log if tool_calls_log else None,
+                            )
+                    except Exception as e:
+                        logger.warning("Bot persist response failed", error=str(e))
 
             elif msg_type == "scene":
                 scene = data.get("scene", "")
-                template = SCENE_TEMPLATES.get(scene, {})
+                # Try DB scene first, fallback to hardcoded
+                template = None
+                sf = _get_sf()
+                if sf:
+                    try:
+                        async with sf() as session:
+                            svc = BotPersistenceService(session)
+                            db_scene = await svc.get_scene(scene)
+                            if db_scene:
+                                template = {
+                                    "speech": db_scene.get("template", ""),
+                                    "emotion": db_scene.get("emotion", "idle"),
+                                    "action": db_scene.get("action"),
+                                }
+                    except Exception:
+                        pass
+                if not template:
+                    template = SCENE_TEMPLATES.get(scene, {})
                 if template:
                     await send({
                         "type": "bot_message",

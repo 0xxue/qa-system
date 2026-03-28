@@ -20,6 +20,8 @@ logger = structlog.get_logger()
 
 # How many recent messages to include as context for multi-turn
 CONTEXT_WINDOW = 10
+# Generate/update summary every N new messages
+COMPRESS_THRESHOLD = 8
 
 
 class ConversationService:
@@ -45,6 +47,7 @@ class ConversationService:
                 "id": c.id,
                 "title": c.title,
                 "message_count": c.message_count,
+                "summary": c.summary,
                 "created_at": c.created_at.isoformat() if c.created_at else None,
                 "updated_at": c.updated_at.isoformat() if c.updated_at else None,
             }
@@ -167,6 +170,136 @@ class ConversationService:
             }
             for m in msgs
         ]
+
+    # ========== Summary & Compression ==========
+
+    async def get_summary(self, conv_id: int) -> str:
+        """Get the existing conversation summary (if any)."""
+        stmt = select(Conversation).where(Conversation.id == conv_id)
+        result = await self.session.execute(stmt)
+        conv = result.scalar_one_or_none()
+        return conv.summary or "" if conv else ""
+
+    async def maybe_compress(self, conv_id: int):
+        """
+        Auto-compress conversation when message count exceeds threshold.
+        Strategy: summarize messages older than the recent window,
+        store as conversation.summary for injection into future prompts.
+        Threshold: generate/update summary every COMPRESS_THRESHOLD messages.
+        """
+        stmt = select(Conversation).where(Conversation.id == conv_id)
+        result = await self.session.execute(stmt)
+        conv = result.scalar_one_or_none()
+        if not conv:
+            return
+
+        msg_count = conv.message_count or 0
+        summary_up_to = conv.summary_up_to or 0
+
+        # Only compress if we have enough NEW messages since last summary
+        if msg_count - summary_up_to < COMPRESS_THRESHOLD:
+            return
+
+        logger.info("Compressing conversation", conv_id=conv_id, msg_count=msg_count, summary_up_to=summary_up_to)
+        await self._generate_summary(conv)
+
+    async def _generate_summary(self, conv: "Conversation"):
+        """
+        Generate a summary of the conversation.
+        Includes existing summary + messages since last summary.
+        Keeps the summary concise for token efficiency.
+        """
+        conv_id = conv.id
+        all_msgs = await self._get_messages(conv_id, limit=200)
+        if not all_msgs:
+            return
+
+        # Build content to summarize: existing summary + all messages beyond the context window
+        # We keep the last CONTEXT_WINDOW messages as-is (they'll be injected as history)
+        msgs_to_summarize = all_msgs[:-CONTEXT_WINDOW] if len(all_msgs) > CONTEXT_WINDOW else []
+        if not msgs_to_summarize and not conv.summary:
+            return
+
+        summary_input_parts = []
+        if conv.summary:
+            summary_input_parts.append(f"[Previous summary]: {conv.summary}")
+        for m in msgs_to_summarize:
+            role = m["role"]
+            content = m["content"][:300]  # Truncate long messages
+            summary_input_parts.append(f"{role}: {content}")
+
+        summary_input = "\n".join(summary_input_parts)
+
+        try:
+            new_summary = await call_llm(
+                model="secondary",
+                system=(
+                    "Summarize this conversation concisely in 2-5 sentences. "
+                    "Preserve: key topics discussed, important conclusions, data points mentioned, "
+                    "and any unresolved questions. Use the same language as the conversation. "
+                    "Reply with ONLY the summary text."
+                ),
+                user=summary_input,
+                temperature=0.2,
+            )
+            new_summary = new_summary.strip()[:1000]
+
+            conv.summary = new_summary
+            conv.summary_up_to = conv.message_count or 0
+            await self.session.commit()
+            logger.info("Summary generated", conv_id=conv_id, length=len(new_summary))
+        except Exception as e:
+            logger.warning("Summary generation failed", conv_id=conv_id, error=str(e))
+
+    async def generate_summary_for_display(self, conv_id: int, user_id: int) -> str:
+        """
+        Generate/return a user-facing summary for display (e.g., bot narration).
+        Returns cached summary if fresh enough, otherwise generates new one.
+        """
+        stmt = select(Conversation).where(
+            Conversation.id == conv_id,
+            Conversation.user_id == user_id,
+        )
+        result = await self.session.execute(stmt)
+        conv = result.scalar_one_or_none()
+        if not conv:
+            return ""
+
+        # If we have a fresh summary, use it
+        if conv.summary and (conv.message_count or 0) - (conv.summary_up_to or 0) < COMPRESS_THRESHOLD:
+            return conv.summary
+
+        # Generate a quick summary from messages
+        msgs = await self._get_messages(conv_id, limit=20)
+        if not msgs:
+            return ""
+
+        msg_text = "\n".join(f"{m['role']}: {m['content'][:200]}" for m in msgs)
+        try:
+            summary = await call_llm(
+                model="secondary",
+                system=(
+                    "Summarize this conversation in 1-3 short sentences for a quick preview. "
+                    "Focus on the main topic and conclusion. Use the same language as the conversation. "
+                    "Reply with ONLY the summary."
+                ),
+                user=msg_text,
+                temperature=0.2,
+            )
+            summary = summary.strip()[:500]
+
+            # Cache it
+            conv.summary = summary
+            conv.summary_up_to = conv.message_count or 0
+            await self.session.commit()
+            return summary
+        except Exception as e:
+            logger.warning("Display summary failed", error=str(e))
+            # Fallback: return first assistant message
+            for m in msgs:
+                if m["role"] == "assistant" and m["content"]:
+                    return m["content"][:150] + "..."
+            return ""
 
     # ========== Auto Title ==========
 

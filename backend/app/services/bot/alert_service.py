@@ -244,9 +244,32 @@ async def check_system_stats() -> Optional[dict]:
     return None
 
 
+async def cleanup_bot_messages() -> Optional[dict]:
+    """Periodically clean up bot messages older than 30 days."""
+    try:
+        def _get_sf():
+            from app.services.database import _session_factory
+            return _session_factory
+
+        sf = _get_sf()
+        if not sf:
+            return None
+
+        async with sf() as session:
+            from app.services.bot.persistence import BotPersistenceService
+            svc = BotPersistenceService(session)
+            await svc.cleanup_old_messages()
+
+    except Exception as e:
+        logger.warning("Bot message cleanup failed", error=str(e))
+
+    return None  # Silent task, no alert
+
+
 def register_builtin_checks():
     """Register default alert checks."""
     alert_manager.register_check("health", check_system_health, interval=60, priority="critical")
     alert_manager.register_check("anomaly", check_data_anomaly, interval=120, priority="high")
     alert_manager.register_check("stats_summary", check_system_stats, interval=600, priority="low")
-    logger.info("Built-in alert checks registered", count=3)
+    alert_manager.register_check("bot_cleanup", cleanup_bot_messages, interval=3600, priority="low")
+    logger.info("Built-in alert checks registered", count=4)

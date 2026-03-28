@@ -16,6 +16,8 @@ class QAState(TypedDict):
     query: str                          # User's original question
     user_id: str                        # Authenticated user ID
     conversation_id: Optional[str]      # For multi-turn conversations
+    conversation_history: list[dict]    # Recent messages for multi-turn context [{role, content}]
+    conversation_summary: Optional[str] # Compressed summary of older messages
 
     # Intent detection
     intents: list[str]                  # Decomposed sub-questions (may be 1 or multiple)

@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useChatStore } from '../../store/chat';
 import { useBotStore } from '../../store/bot';
-import { streamQuestion, getConversations, getConversation, deleteConversation } from '../../api/qa';
+import { streamQuestion, getConversations, getConversation, getConversationSummary, deleteConversation } from '../../api/qa';
 import { MessageBubble } from './MessageBubble';
 import { Plus, Trash2 } from 'lucide-react';
 import { toast } from '../../components/ui/Toast';
+import { botEngine } from '../../hooks/useBotEngine';
 import type { Message } from '../../types';
 
 const SUGGESTED = [
@@ -44,7 +45,7 @@ export default function ChatPage() {
   }, [messages]);
 
   // Load conversation messages when clicking history
-  const loadConversation = useCallback(async (convId: number) => {
+  const loadConversation = useCallback(async (convId: number, e?: React.MouseEvent) => {
     if (convId === conversationId) return;
     try {
       const data = await getConversation(convId);
@@ -59,6 +60,13 @@ export default function ChatPage() {
         }));
         setConversationId(convId);
         setMessages(msgs);
+
+        // Bot flies over and summarizes the conversation
+        const el = e?.currentTarget as HTMLElement | undefined;
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          botEngine.emit('chat:load_conversation', { convId, rect, title: data.title });
+        }
       }
     } catch {
       toast('Failed to load conversation', 'error');
@@ -193,7 +201,7 @@ export default function ChatPage() {
           {conversations.map(c => (
             <div
               key={c.id}
-              onClick={() => loadConversation(c.id)}
+              onClick={(e) => loadConversation(c.id, e)}
               className="animate-slide-in"
               style={{
                 padding: '10px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center',

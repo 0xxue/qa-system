@@ -11,7 +11,9 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { onBotMessage, type BotMessage } from '../../hooks/useBotWebSocket';
-import { X, Minus, Send } from 'lucide-react';
+import { useBotVoice } from '../../hooks/useBotVoice';
+import { useBotStore } from '../../store/bot';
+import { X, Send, Mic, MicOff, VolumeX } from 'lucide-react';
 
 interface ChatMessage {
   id: string;
@@ -37,6 +39,48 @@ export function BotChatPanel({ open, onClose, onSend, botPos, botSize }: Props) 
   const [thinking, setThinking] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const waitingForReply = useRef(false); // Track if we're expecting a reply
+  const historyLoaded = useRef(false);
+
+  // Voice system
+  const handleVoiceMessage = useCallback((text: string) => {
+    // Voice STT result → same as typing + sending
+    setMessages(prev => [...prev, { id: `user-${Date.now()}`, role: 'user', content: text, timestamp: Date.now() }]);
+    waitingForReply.current = true;
+    onSend(text);
+  }, [onSend]);
+
+  const voice = useBotVoice(handleVoiceMessage);
+  const lastBotMsg = useRef<string>('');
+
+  // Load persisted messages on first open
+  useEffect(() => {
+    if (!open || historyLoaded.current) return;
+    historyLoaded.current = true;
+
+    const token = localStorage.getItem('token');
+    fetch('/api/v1/bot/messages?limit=20', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then(r => r.json())
+      .then((data: any[]) => {
+        if (Array.isArray(data) && data.length > 0) {
+          const restored: ChatMessage[] = data.map(m => ({
+            id: `h-${m.id}`,
+            role: m.direction === 'user_to_bot' ? 'user' : 'bot',
+            content: m.content || '',
+            emotion: m.emotion,
+            tools: m.tool_calls,
+            timestamp: m.created_at ? new Date(m.created_at).getTime() : Date.now(),
+          }));
+          setMessages(prev => {
+            // Merge: history first, then any welcome message
+            const welcome = prev.filter(m => m.id === 'welcome');
+            return [...restored, ...welcome];
+          });
+        }
+      })
+      .catch(() => {});
+  }, [open]);
 
   // Listen for WebSocket messages
   useEffect(() => {
@@ -65,6 +109,8 @@ export function BotChatPanel({ open, onClose, onSend, botPos, botSize }: Props) 
         }]);
         setThinking(false);
         waitingForReply.current = false;
+        // Auto-speak bot response
+        lastBotMsg.current = msg.content!;
       }
 
       if (msg.type === 'bot_alert' && msg.content) {
@@ -82,6 +128,21 @@ export function BotChatPanel({ open, onClose, onSend, botPos, botSize }: Props) 
       }
     });
   }, []);
+
+  // Auto-speak bot response
+  useEffect(() => {
+    if (lastBotMsg.current && voice.config.enabled && voice.config.autoSpeak) {
+      voice.speak(lastBotMsg.current);
+      lastBotMsg.current = '';
+    }
+  });
+
+  // Sync voice speaking state → VRM mouth animation
+  const setEmotion = useBotStore(s => s.setEmotion);
+  useEffect(() => {
+    if (voice.speaking) setEmotion('talking');
+    else if (!thinking) setEmotion('idle');
+  }, [voice.speaking, thinking, setEmotion]);
 
   // Auto-scroll
   useEffect(() => {
@@ -165,16 +226,44 @@ export function BotChatPanel({ open, onClose, onSend, botPos, botSize }: Props) 
         )}
       </div>
 
+      {/* Voice transcript indicator */}
+      {voice.listening && (
+        <div className="font-mono" style={{
+          padding: '4px 10px', background: 'rgba(212, 82, 26, 0.08)',
+          borderTop: '1px solid var(--line)', fontSize: 11, color: 'var(--orange)',
+          display: 'flex', alignItems: 'center', gap: 6,
+        }}>
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#c0392b', animation: 'pulse 1s infinite' }} />
+          {voice.transcript || 'Listening...'}
+        </div>
+      )}
+
       {/* Input */}
       <div style={{
         padding: '8px 10px', borderTop: '2px solid var(--ink)',
         display: 'flex', gap: 6,
       }}>
+        {voice.config.enabled && voice.available && (
+          <button
+            onClick={() => voice.listening ? voice.stopListening() : voice.startListening()}
+            title={voice.listening ? 'Stop listening' : 'Voice input'}
+            style={{
+              width: 32, height: 32, border: 'none', cursor: 'pointer',
+              background: voice.listening ? '#c0392b' : 'var(--ink)',
+              color: 'var(--cream)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              animation: voice.listening ? 'pulse 1s infinite' : 'none',
+              transition: 'all 0.2s',
+            }}
+          >
+            {voice.listening ? <MicOff size={14} /> : <Mic size={14} />}
+          </button>
+        )}
         <input
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') handleSend(); }}
-          placeholder="Ask bot or give commands..."
+          placeholder={voice.listening ? 'Speaking...' : 'Ask bot or give commands...'}
+          disabled={voice.listening}
           className="font-mono"
           style={{
             flex: 1, background: 'none', border: '1.5px solid var(--line)',
@@ -183,13 +272,23 @@ export function BotChatPanel({ open, onClose, onSend, botPos, botSize }: Props) 
           onFocus={e => e.target.style.borderColor = 'var(--orange)'}
           onBlur={e => e.target.style.borderColor = 'var(--line)'}
         />
-        <button onClick={handleSend} style={{
-          width: 32, height: 32, border: 'none', background: 'var(--orange)',
-          color: 'var(--cream)', cursor: 'pointer', display: 'flex',
-          alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Send size={14} />
-        </button>
+        {voice.speaking ? (
+          <button onClick={() => voice.stopSpeaking()} title="Stop speaking" style={{
+            width: 32, height: 32, border: 'none', background: '#c0392b',
+            color: 'var(--cream)', cursor: 'pointer', display: 'flex',
+            alignItems: 'center', justifyContent: 'center',
+          }}>
+            <VolumeX size={14} />
+          </button>
+        ) : (
+          <button onClick={handleSend} style={{
+            width: 32, height: 32, border: 'none', background: 'var(--orange)',
+            color: 'var(--cream)', cursor: 'pointer', display: 'flex',
+            alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Send size={14} />
+          </button>
+        )}
       </div>
     </div>
   );

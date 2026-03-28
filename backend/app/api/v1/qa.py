@@ -47,22 +47,29 @@ async def ask(request: QARequest, user=Depends(get_optional_user)):
     thread_id = request.conversation_id or str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}}
 
-    # Save conversation to DB if available
+    # Save conversation to DB and fetch history for multi-turn context
     conv_id = None
+    conversation_history = []
+    conversation_summary = ""
     from app.services.database import _session_factory
     if _session_factory:
         try:
             async with _session_factory() as session:
                 conv_id, svc = await _get_or_create_conversation(session, user.id, request.conversation_id)
+                # Fetch history BEFORE adding the new message
+                conversation_history = await svc.get_context_messages(conv_id)
+                conversation_summary = await svc.get_summary(conv_id)
                 await svc.add_message(conv_id, "user", request.query)
         except Exception as e:
             logger.warning("Failed to save user message", error=str(e))
 
-    # Run LangGraph
+    # Run LangGraph with conversation context
     result = await qa_graph.ainvoke({
         "query": request.query,
         "user_id": str(user.id),
         "conversation_id": thread_id,
+        "conversation_history": conversation_history,
+        "conversation_summary": conversation_summary or "",
     }, config=config)
 
     answer = result.get("answer", "")
@@ -80,8 +87,9 @@ async def ask(request: QARequest, user=Depends(get_optional_user)):
                     chart=result.get("chart"),
                     confidence=confidence,
                 )
-                # Auto-generate title on first message
                 await svc.auto_generate_title(conv_id, request.query)
+                # Auto-compress: generate summary when conversation gets long
+                await svc.maybe_compress(conv_id)
         except Exception as e:
             logger.warning("Failed to save AI response", error=str(e))
 
@@ -102,13 +110,18 @@ async def stream(request: QARequest, user=Depends(get_optional_user)):
     thread_id = request.conversation_id or str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}}
 
-    # Save user message
+    # Save user message and fetch history for multi-turn context
     conv_id = None
+    conversation_history = []
+    conversation_summary = ""
     from app.services.database import _session_factory
     if _session_factory:
         try:
             async with _session_factory() as session:
                 conv_id, svc = await _get_or_create_conversation(session, user.id, request.conversation_id)
+                # Fetch history BEFORE adding the new message
+                conversation_history = await svc.get_context_messages(conv_id)
+                conversation_summary = await svc.get_summary(conv_id)
                 await svc.add_message(conv_id, "user", request.query)
         except Exception as e:
             logger.warning("Failed to save user message", error=str(e))
@@ -128,6 +141,8 @@ async def stream(request: QARequest, user=Depends(get_optional_user)):
                 "query": request.query,
                 "user_id": str(user.id),
                 "conversation_id": thread_id,
+                "conversation_history": conversation_history,
+                "conversation_summary": conversation_summary or "",
             }, config=config):
                 node_name = list(event.keys())[0]
                 node_output = event[node_name]
@@ -159,6 +174,8 @@ async def stream(request: QARequest, user=Depends(get_optional_user)):
                             sources=full_sources, chart=full_chart, confidence=full_confidence,
                         )
                         await svc.auto_generate_title(conv_id, request.query)
+                        # Auto-compress: generate summary when conversation gets long
+                        await svc.maybe_compress(conv_id)
                 except Exception as e:
                     logger.warning("Failed to save AI response", error=str(e))
 
@@ -203,6 +220,23 @@ async def get_conversation(conv_id: int, user=Depends(get_optional_user)):
         if not result:
             return {"error": "Conversation not found"}
         return result
+
+
+@router.get("/conversations/{conv_id}/summary")
+async def get_conversation_summary(conv_id: int, user=Depends(get_optional_user)):
+    """Get or generate a conversation summary for display."""
+    sf = _get_sf()
+    if not sf:
+        return {"summary": ""}
+    try:
+        async with sf() as session:
+            svc = ConversationService(session)
+            user_id = int(user.id) if str(user.id).isdigit() else 1
+            summary = await svc.generate_summary_for_display(conv_id, user_id)
+            return {"summary": summary}
+    except Exception as e:
+        logger.warning("Failed to get summary", error=str(e))
+        return {"summary": ""}
 
 
 @router.delete("/conversations/{conv_id}")

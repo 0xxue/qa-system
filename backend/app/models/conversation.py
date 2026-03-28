@@ -10,6 +10,8 @@ class Conversation(Base, TimestampMixin):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     title = Column(String(200), default="New Conversation")
     message_count = Column(Integer, default=0)
+    summary = Column(Text, nullable=True)           # Compressed summary of older messages
+    summary_up_to = Column(Integer, default=0)      # Message count when summary was last generated
 
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
 

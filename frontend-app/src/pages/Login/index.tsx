@@ -27,6 +27,7 @@ export default function LoginPage() {
         const data: any = await client.post('/auth/login', { username, password });
         if (data.access_token) {
           localStorage.setItem('token', data.access_token);
+          localStorage.removeItem('demo_mode');
           toast('Welcome back!', 'success');
           navigate('/chat');
         } else {
@@ -42,7 +43,8 @@ export default function LoginPage() {
 
   const handleDemo = () => {
     localStorage.removeItem('token');
-    toast('Entering demo mode', 'info');
+    localStorage.setItem('demo_mode', '1');
+    toast('Entering demo mode — limited access', 'info');
     navigate('/chat');
   };
 

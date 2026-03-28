@@ -151,6 +151,11 @@ async def think(message: str, user, context: dict = None) -> BotResponse:
     if context.get("mode"):
         messages[0]["content"] += f"\nBot mode: {context['mode']} (A=companion, B=assistant, C=quiet)."
 
+    # Inject short-term conversation history from DB
+    history = context.get("history", [])
+    if history:
+        messages.extend(history)
+
     messages.append({"role": "user", "content": message})
 
     tool_log = []

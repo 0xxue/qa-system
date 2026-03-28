@@ -70,4 +70,5 @@ export async function streamQuestion(query: string, conversationId?: number, cal
 
 export const getConversations = () => client.get('/qa/conversations');
 export const getConversation = (id: number) => client.get(`/qa/conversations/${id}`);
+export const getConversationSummary = (id: number) => client.get(`/qa/conversations/${id}/summary`);
 export const deleteConversation = (id: number) => client.delete(`/qa/conversations/${id}`);
