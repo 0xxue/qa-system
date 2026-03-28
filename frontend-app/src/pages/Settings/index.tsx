@@ -22,9 +22,9 @@ const LANGUAGES = [
 ];
 
 const DEFAULT_PERSONAS = [
-  { id: 'clawford', name: 'Clawford', emoji: '🦀', personality: 'Professional yet witty, enterprise-grade with a pinch of humor', greeting: "Hello! I'm Clawford, your enterprise AI assistant 🦀 How can I help?" },
-  { id: 'nexus', name: 'Nexus', emoji: '⚡', personality: 'Strictly professional, concise, data-driven', greeting: "Nexus online. Ready for your query." },
-  { id: 'buddy', name: 'Buddy', emoji: '🎉', personality: 'Casual, talkative, lots of emoji, friendly', greeting: "Hey there! What's up? 🎉" },
+  { id: 'clawford', name: 'Clawford', emoji: '🦀', role: 'Senior Data Analyst', personality: 'Professional yet witty, data-driven with a pinch of humor', expertise: 'Financial analysis, business intelligence, KPI tracking', greeting: "Hello! I'm Clawford, your enterprise data analyst 🦀 Ready to crunch some numbers?" },
+  { id: 'nexus', name: 'Nexus', emoji: '⚡', role: 'System Operations Engineer', personality: 'Strictly professional, concise, precise', expertise: 'System monitoring, DevOps, performance optimization', greeting: "Nexus online. All systems nominal." },
+  { id: 'buddy', name: 'Buddy', emoji: '🎉', role: 'General Assistant', personality: 'Casual, talkative, friendly, lots of emoji', expertise: 'General Q&A, onboarding, feature explanation', greeting: "Hey there! What's up? 🎉" },
 ];
 
 function loadPersonas() {
@@ -196,6 +196,7 @@ export default function SettingsPage() {
                 onChange={() => {}} style={{ accentColor: 'var(--orange)' }} />
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 13, fontWeight: 500 }}>{p.emoji} {p.name}</div>
+                {p.role && <div className="font-mono" style={{ fontSize: 10, color: 'var(--orange)' }}>{p.role}</div>}
                 <div className="font-mono" style={{ fontSize: 10, color: 'var(--dim)' }}>{p.personality}</div>
               </div>
               <div style={{ display: 'flex', gap: 4 }}>
@@ -240,18 +241,28 @@ export default function SettingsPage() {
               <div style={{ flex: 1 }}>
                 <div className="font-mono" style={{ fontSize: 9, color: 'var(--dim)', marginBottom: 4 }}>NAME</div>
                 <Input value={editingPersona.name} onChange={e => setEditingPersona({ ...editingPersona, name: e.target.value })}
-                  placeholder="e.g. 蟹老板" />
+                  placeholder="e.g. Clawford" />
               </div>
+            </div>
+            <div>
+              <div className="font-mono" style={{ fontSize: 9, color: 'var(--dim)', marginBottom: 4 }}>ROLE / IDENTITY</div>
+              <Input value={editingPersona.role || ''} onChange={e => setEditingPersona({ ...editingPersona, role: e.target.value })}
+                placeholder="e.g. Senior Data Analyst, HR Manager, DevOps Engineer" />
             </div>
             <div>
               <div className="font-mono" style={{ fontSize: 9, color: 'var(--dim)', marginBottom: 4 }}>PERSONALITY</div>
               <Input value={editingPersona.personality} onChange={e => setEditingPersona({ ...editingPersona, personality: e.target.value })}
-                placeholder="e.g. Cheerful, humorous, speaks with crab puns" />
+                placeholder="e.g. Professional yet witty, data-driven" />
+            </div>
+            <div>
+              <div className="font-mono" style={{ fontSize: 9, color: 'var(--dim)', marginBottom: 4 }}>EXPERTISE</div>
+              <Input value={editingPersona.expertise || ''} onChange={e => setEditingPersona({ ...editingPersona, expertise: e.target.value })}
+                placeholder="e.g. Financial analysis, KPI tracking, budget planning" />
             </div>
             <div>
               <div className="font-mono" style={{ fontSize: 9, color: 'var(--dim)', marginBottom: 4 }}>GREETING</div>
               <Input value={editingPersona.greeting} onChange={e => setEditingPersona({ ...editingPersona, greeting: e.target.value })}
-                placeholder="e.g. 嘿！我是蟹老板 🦀" />
+                placeholder="e.g. Hello! I'm Clawford 🦀" />
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <Button variant="outline" size="sm" onClick={() => { setShowPersonaEditor(false); setEditingPersona(null); }}>CANCEL</Button>
