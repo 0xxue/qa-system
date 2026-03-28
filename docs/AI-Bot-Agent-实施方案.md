@@ -280,7 +280,154 @@ async def bot_think(user_message: str, user: User, context: dict) -> BotResponse
 
 ---
 
-## 4. WebSocket Flow
+## 4. Bot Behavior System (前端行为引擎)
+
+Bot 不只是浮在角落，它有完整的行为系统：
+
+### 4.1 移动系统（Movement）
+
+```typescript
+// Bot 可以飞到页面任意位置
+botMoveTo(x, y, {
+  trail: true,       // 飞行轨迹粒子
+  beacon: true,      // 目标点信标动画
+  onArrive: () => {} // 到达回调
+});
+
+// 避让：当某个元素需要空间时（如输入框聚焦），Bot 自动让开
+botMoveAwayFrom(elementRect);
+
+// 回到默认位置
+botMoveToDefault();
+```
+
+### 4.2 场景反应（Scene Reactions）
+
+Bot 在用户切换页面时**飞到对应区域并说话**：
+
+```typescript
+const SCENE_REACTIONS = {
+  '/chat': {
+    position: { x: '85vw', y: '80vh' },    // 飞到右下角
+    speech: "Let's chat! Ask me anything ▶",
+    emotion: 'happy',
+  },
+  '/kb': {
+    position: { x: '75vw', y: '35vh' },    // 飞到页面中部
+    speech: 'Knowledge base management! ◈',
+    emotion: 'thinking',
+  },
+  '/dashboard': {
+    position: { x: '65vw', y: '20vh' },    // 飞到上方
+    speech: 'Loading data dashboard... ◉',
+    emotion: 'thinking',
+    onArrive: () => setEmotion('happy'),
+  },
+  '/settings': {
+    position: { x: '50vw', y: '50vh' },    // 页面正中
+    speech: 'Settings! You can customize me here.',
+    emotion: 'idle',
+  },
+};
+```
+
+### 4.3 新手引导（Feature Tour）
+
+首次使用时，Bot 自动带用户游览系统：
+
+```typescript
+const TOUR_STEPS = [
+  {
+    target: '#sidebar',
+    position: { x: '15vw', y: '15vh' },
+    speech: 'This is the navigation bar ▶',
+    emotion: 'talking',
+  },
+  {
+    target: '#conv-list',
+    position: { x: '25vw', y: '45vh' },
+    speech: 'Conversation history is here ◈',
+    emotion: 'talking',
+  },
+  {
+    target: '#chat-input',
+    position: { x: '50vw', y: '85vh' },
+    speech: 'Type your question here, press Enter ▶',
+    emotion: 'talking',
+  },
+  {
+    target: null,
+    position: 'default',
+    speech: 'Tour complete! I\'ll be right here ◈',
+    emotion: 'happy',
+    action: 'wave',
+  },
+];
+
+// 每步之间间隔 3s，Bot 飞行 + 说话 + 切表情
+```
+
+### 4.4 交互行为
+
+| 行为 | 触发 | 响应 |
+|------|------|------|
+| **戳一戳** | 点击 Bot | 随机说话 + surprised 表情（"That tickles!", "Hey stop poking!"） |
+| **拖拽** | 鼠标按住拖动 | 缩放 1.08 + 粒子轨迹 + surprised → 放下时说 "Put me down~" |
+| **闲置聊天** | 30s 无操作 | 随机说一句（"Standing by~", "Ask me anything!", "I can help!"） |
+| **输入框避让** | textarea 聚焦 | Bot 飞走让出空间 |
+| **点击打开对话** | 双击 Bot | 弹出迷你对话面板 |
+| **错误安慰** | API 报错 | sad + "Oops, something went wrong..." |
+| **成功庆祝** | 操作完成 | happy + nod + "Done!" |
+
+### 4.5 对话面板（Chat Panel）
+
+点击/双击 Bot → 弹出迷你对话框（独立于主 Chat 页面）：
+
+```
+┌─────────────────────────────┐
+│  🦀 Nexus Bot          ─ ✕  │  ← 可最小化/关闭
+├─────────────────────────────┤
+│                             │
+│  Bot: 你好！需要帮忙吗？     │
+│                             │
+│  You: 帮我查系统状态         │
+│                             │
+│  Bot: [thinking → talking]  │
+│  系统运行正常，5 个用户...    │
+│                             │
+├─────────────────────────────┤
+│  [输入消息...]         [发送] │
+│  🎤 语音                     │  ← Phase 4
+└─────────────────────────────┘
+
+特点：
+- 走 WebSocket（不是 HTTP），Bot Brain 直接处理
+- 支持工具调用（"帮我创建知识库" → 直接执行）
+- 独立于主 Chat 页面（主 Chat 走 LangGraph 11 节点完整 QA）
+- 对话历史存 bot_messages 表
+- 可最小化到 Bot 身上（小红点提示未读）
+```
+
+### 4.6 移动轨迹粒子
+
+```typescript
+// Bot 飞行时留下粒子轨迹
+function emitTrail(x: number, y: number) {
+  // 3-8 个粒子，随机大小 4-10px
+  // 颜色池：orange, cream, warm, amber
+  // 动画：0.6-1s 淡出 + 上飘 + 缩小
+}
+
+// 信标：目标位置的脉冲圆圈
+function showBeacon(x: number, y: number) {
+  // 40px 圆圈，scale 1→1.2 循环动画
+  // Bot 到达后消失
+}
+```
+
+---
+
+## 5. WebSocket Flow
 
 ```
 User opens app
@@ -317,10 +464,10 @@ User opens app
 
 ## 5. Implementation Phases
 
-### Phase 1: Core Agent (Week 1) ⭐
-**Goal: Bot can chat and execute tools via WebSocket**
+### Phase 1: Core Agent + Behavior System (Week 1) ⭐
+**Goal: Bot can chat, execute tools, move, and react to scenes**
 
-Files to create:
+Backend files:
 ```
 backend/app/
 ├── api/v1/ws.py              # WebSocket endpoint
@@ -331,16 +478,41 @@ backend/app/
 │   └── bot_emotion.py         # Emotion mapping engine
 ```
 
-Tasks:
-1. `ws_manager.py` — WebSocket connection manager (connect/disconnect/push)
-2. `bot_tools.py` — Define 15+ tools, each calls existing backend APIs
-3. `bot_brain.py` — LLM Agent loop with function calling
-4. `bot_emotion.py` — Map context/result to emotion + action
-5. `ws.py` — WebSocket endpoint, authenticate, route messages
-6. Frontend: `useBotWebSocket.ts` hook, connect on app mount
-7. Frontend: Bot chat panel (type message → send via WS → show response)
+Frontend files:
+```
+frontend-app/src/
+├── components/bot/
+│   ├── BotContainer.tsx       # Update: add moveTo, trail, beacon, scene reactions
+│   ├── BotChatPanel.tsx       # NEW: mini chat dialog
+│   ├── BotTrail.tsx           # NEW: flight trail particles
+│   └── VRMBotPlugin.ts       # Existing: 3D avatar
+├── hooks/
+│   ├── useBotWebSocket.ts     # NEW: WebSocket connection + message handling
+│   └── useBotScene.ts         # NEW: Route change → scene event
+└── store/
+    └── bot.ts                 # Update: add position, chatOpen, messages
+```
 
-**Deliverable:** User can type "帮我查看系统状态" → Bot calls tool → returns answer with emotion
+Tasks:
+1. **Backend:** `ws_manager.py` — WebSocket connection manager
+2. **Backend:** `bot_tools.py` — 15+ tools calling existing APIs
+3. **Backend:** `bot_brain.py` — LLM Agent loop with function calling
+4. **Backend:** `bot_emotion.py` — Context → emotion + action mapping
+5. **Backend:** `ws.py` — WebSocket endpoint with JWT auth
+6. **Frontend:** `useBotWebSocket.ts` — Connect on mount, handle messages
+7. **Frontend:** `useBotScene.ts` — Route change → send scene → Bot flies + speaks
+8. **Frontend:** `BotChatPanel.tsx` — Click Bot → open mini chat dialog
+9. **Frontend:** Movement system — `moveTo()` with trail particles + beacon
+10. **Frontend:** Scene reactions — Page change → Bot flies to position + speaks
+11. **Frontend:** Interactions — Poke (click), drag trail, idle chat, input avoidance
+12. **Frontend:** Feature Tour — First-time guided tour
+
+**Deliverables:**
+- User types in Bot chat panel → Bot calls tools → returns answer with emotion
+- User navigates pages → Bot flies to relevant area + speaks
+- First visit → Bot guides user through features
+- Click Bot → "That tickles!" + surprised face
+- 30s idle → Bot says random phrase
 
 ### Phase 2: Scene Awareness (Week 2)
 **Goal: Bot reacts to page navigation and system events**
