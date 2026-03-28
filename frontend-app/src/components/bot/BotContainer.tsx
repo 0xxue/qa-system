@@ -272,63 +272,92 @@ export function BotContainer() {
     }
   }, [location.pathname, sendScene]);
 
-  // ── Idle Behavior (every 15s — uses refs to avoid stale closures) ──
+  // ── Page-Aware Idle Behavior ──
   const chatOpenRef = useRef(chatOpen);
   const draggingRef = useRef(dragging);
+  const pathRef = useRef(location.pathname);
   chatOpenRef.current = chatOpen;
   draggingRef.current = dragging;
+  pathRef.current = location.pathname;
 
   useEffect(() => {
     let count = 0;
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       if (draggingRef.current || chatOpenRef.current || isFlying.current) return;
       count++;
 
       const say = (window as any).__botSay;
-      const p = pluginRef.current;
       const setE = setEmotionRef.current;
+      const page = pathRef.current;
 
-      if (count % 3 === 0) {
-        // Every 45s: say something with data
-        fetch('/api/v1/stats').then(r => r.json()).then(stats => {
-          const dataLines = [
-            `System running with ${stats.total_users} users ✓`,
-            `${stats.total_conversations} conversations happening 💬`,
-            `${stats.total_messages} messages and counting 📨`,
-            `${stats.total_documents} docs in knowledge base 📄`,
+      try {
+        // Every 20s: page-specific proactive behavior
+        if (count % 4 === 0) {
+          // Fetch real data and comment based on current page
+          const statsRes = await fetch('/api/v1/stats');
+          const stats = await statsRes.json();
+
+          if (page === '/dashboard' || page === '/') {
+            const insights = [
+              stats.total_users > 3 ? `${stats.total_users} users active. The team is growing! 📈` : `Only ${stats.total_users} users so far. Invite more people! 👥`,
+              stats.total_messages > 10 ? `${stats.total_messages} messages exchanged. Lots of activity! 💬` : `${stats.total_messages} messages. Try asking me more questions! 📊`,
+              stats.total_documents > 0 ? `${stats.total_documents} documents in KB. Knowledge is power! 📚` : `No documents uploaded yet. Upload some docs to KB for better answers! 📄`,
+              `System health looks good. ${stats.total_conversations} conversations running ✓`,
+            ];
+            setE('talking');
+            say?.(insights[Math.floor(Math.random() * insights.length)], 5000);
+            setTimeout(() => setE('idle'), 5000);
+          } else if (page === '/chat') {
+            const chatTips = [
+              stats.total_conversations > 0 ? `You have ${stats.total_conversations} conversations. Want to continue one? 💬` : `No conversations yet. Ask me anything to get started! ▶`,
+              'Try asking: "What are the key metrics?" or "Analyze user trends" 📊',
+              'I can also search your uploaded documents! Just ask 📚',
+              'Click me for quick commands — I can create KBs, check health, and more 🦀',
+            ];
+            say?.(chatTips[Math.floor(Math.random() * chatTips.length)], 4000);
+          } else if (page === '/kb') {
+            const kbRes = await fetch('/api/v1/kb/collections');
+            const kbData = await kbRes.json();
+            const collections = kbData.collections || [];
+            const kbTips = [
+              collections.length > 0 ? `${collections.length} knowledge bases. Click one to manage documents! 📂` : `No knowledge bases yet. Create one to start! Click + above 📁`,
+              'Upload PDF, Word, Excel, or Markdown files. I\'ll learn from them! 📄',
+              'After uploading, ask me questions about the documents in Chat 💬',
+              collections.length > 0 ? `Try uploading to "${collections[0].name}" — it has ${collections[0].doc_count} docs 📚` : 'Create a KB like "Product Manual" or "Technical Docs" 📂',
+            ];
+            setE('thinking');
+            say?.(kbTips[Math.floor(Math.random() * kbTips.length)], 5000);
+            setTimeout(() => setE('idle'), 5000);
+          } else if (page === '/settings') {
+            const settingsTips = [
+              'You can change my personality here! Try switching to Nexus or Buddy 🔄',
+              'Adjust my size with the slider. Bigger = easier to see! 📏',
+              'Switch LLM models if DeepSeek is too slow. GPT-4o is faster ⚡',
+              'Language setting affects how I respond. Auto matches your language 🌍',
+            ];
+            say?.(settingsTips[Math.floor(Math.random() * settingsTips.length)], 4000);
+          } else if (page === '/admin') {
+            const adminTips = [
+              'Check MONITOR tab for system health status 🔍',
+              'AUDIT tab shows all user actions. Important for compliance! 📋',
+              'BOT TOOLS tab lets you enable/disable my capabilities 🔧',
+              'You can change user roles in the USERS tab. Be careful with admin! ⚠️',
+            ];
+            setE('thinking');
+            say?.(adminTips[Math.floor(Math.random() * adminTips.length)], 4000);
+            setTimeout(() => setE('idle'), 4000);
+          }
+        } else if (count % 2 === 0) {
+          // Every 10s: emotion expression
+          const emotions: Array<() => void> = [
+            () => { setE('happy'); setTimeout(() => setE('idle'), 2000); },
+            () => { setE('thinking'); setTimeout(() => setE('idle'), 2000); },
+            () => { setE('surprised'); setTimeout(() => setE('happy'), 500); setTimeout(() => setE('idle'), 2000); },
           ];
-          say?.(dataLines[Math.floor(Math.random() * dataLines.length)], 4000);
-          setE('talking');
-          setTimeout(() => setE('idle'), 4000);
-        }).catch(() => {});
-      } else if (count % 2 === 0) {
-        // Every 30s: personality phrase
-        const phrases = [
-          'Standing by~ ✦', 'Need help?', 'Click me to chat! 💬',
-          'All systems running smooth ✓', 'I can check data for you 📊',
-          'Try asking me to create a knowledge base!',
-          'I\'m Clawford 🦀', 'Ask me anything!',
-        ];
-        say?.(phrases[Math.floor(Math.random() * phrases.length)], 3000);
-      } else {
-        // Every 15s: random emotion sequence (visible on crab model)
-        const emotionSequences = [
-          // Happy wiggle
-          () => { setE('happy'); setTimeout(() => setE('surprised'), 500); setTimeout(() => setE('happy'), 1000); setTimeout(() => setE('idle'), 2000); },
-          // Curious look
-          () => { setE('thinking'); say?.('Hmm... 🤔', 2000); setTimeout(() => setE('idle'), 3000); },
-          // Excited
-          () => { setE('surprised'); say?.('Oh! 🦀', 1500); setTimeout(() => setE('happy'), 800); setTimeout(() => setE('idle'), 2500); },
-          // Sleepy then alert
-          () => { setE('sad'); setTimeout(() => { setE('surprised'); say?.('I\'m awake! 😮', 2000); }, 1500); setTimeout(() => setE('idle'), 4000); },
-          // Just happy
-          () => { setE('happy'); setTimeout(() => setE('idle'), 2000); },
-          // Crab emoji
-          () => { say?.('🦀', 1500); },
-        ];
-        emotionSequences[Math.floor(Math.random() * emotionSequences.length)]();
-      }
-    }, 15000);
+          emotions[Math.floor(Math.random() * emotions.length)]();
+        }
+      } catch {}
+    }, 10000);
     return () => clearInterval(interval);
   }, []);
 
