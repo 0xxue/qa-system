@@ -9,6 +9,7 @@ sqlalchemy==2.0.36
 asyncpg==0.30.0
 alembic==1.14.1
 redis==5.2.1
+pgvector>=0.2.0
 
 # ── AI / LLM ──
 langgraph==1.1.3

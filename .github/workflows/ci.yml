@@ -115,7 +115,11 @@ jobs:
           node-version: "20"
 
       - name: Install dependencies
-        run: cd frontend-app && npm install --legacy-peer-deps
+        run: |
+          cd frontend-app
+          # Remove workspace refs (resolved by vite alias in dev, not needed for CI build)
+          node -e "const p=require('./package.json'); delete p.dependencies['@nexus/ai-bot']; delete p.dependencies['@nexus/bot-admin']; require('fs').writeFileSync('./package.json', JSON.stringify(p, null, 2));"
+          npm install --legacy-peer-deps
 
       - name: Build
         run: cd frontend-app && npx vite build
