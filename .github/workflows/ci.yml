@@ -1,0 +1,156 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  # ══════════════════════════════════════
+  # Backend — Python lint + test
+  # ══════════════════════════════════════
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ai_qa_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install ruff pytest pytest-asyncio httpx
+
+      - name: Lint (ruff)
+        run: ruff check app/ --select E,F,W --ignore E501
+
+      - name: Type check (imports)
+        run: python -c "
+          from app.core.langgraph.state import QAState;
+          from app.models import Base, User, Conversation, Message, BotMessage, BotScene, BotPreference;
+          from app.services.bot.brain import think, BOT_PERSONAS;
+          from app.services.bot.tools import get_tool_definitions;
+          from app.services.bot.persistence import BotPersistenceService;
+          from app.services.conversation import ConversationService;
+          from app.services.llm import call_llm;
+          from app.api.v1.router import api_router;
+          print('All imports OK')
+          "
+
+      - name: Run migrations
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/ai_qa_test
+          REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET: test-secret
+          DEEPSEEK_API_KEY: test
+        run: alembic upgrade head
+
+      - name: Test database schema
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/ai_qa_test
+          REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET: test-secret
+          DEEPSEEK_API_KEY: test
+        run: python -c "
+          import asyncio
+          from app.services.database import init_db, _session_factory
+          async def check():
+              await init_db()
+              from app.services.database import _session_factory as sf
+              async with sf() as s:
+                  from sqlalchemy import text
+                  r = await s.execute(text(\"SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename\"))
+                  tables = [row[0] for row in r]
+                  assert len(tables) >= 13, f'Expected 13+ tables, got {len(tables)}: {tables}'
+                  print(f'OK: {len(tables)} tables')
+          asyncio.run(check())
+          "
+
+  # ══════════════════════════════════════
+  # Frontend — lint + build
+  # ══════════════════════════════════════
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend-app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend-app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Build
+        run: npx vite build
+
+  # ══════════════════════════════════════
+  # Packages — verify structure
+  # ══════════════════════════════════════
+  packages:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Verify @nexus/ai-bot structure
+        run: |
+          test -f packages/ai-bot/package.json
+          test -f packages/ai-bot/src/index.ts
+          test -f packages/ai-bot/src/BotProvider.tsx
+          test -f packages/ai-bot/src/components/BotContainer.tsx
+          test -f packages/ai-bot/src/components/VRMBotPlugin.ts
+          test -f packages/ai-bot/src/hooks/useBotWebSocket.ts
+          test -f packages/ai-bot/src/voice/BrowserVoiceProvider.ts
+          echo "@nexus/ai-bot structure OK"
+
+      - name: Verify @nexus/bot-admin structure
+        run: |
+          test -f packages/bot-admin/package.json
+          test -f packages/bot-admin/src/index.ts
+          test -f packages/bot-admin/src/BotManagePanel.tsx
+          test -f packages/bot-admin/src/tabs/ScenesTab.tsx
+          echo "@nexus/bot-admin structure OK"

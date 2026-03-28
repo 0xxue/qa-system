@@ -1,0 +1,31 @@
+# ── Core ──
+fastapi==0.115.6
+uvicorn==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# ── Database ──
+sqlalchemy==2.0.36
+asyncpg==0.30.0
+alembic==1.14.1
+redis==5.2.1
+
+# ── AI / LLM ──
+langgraph==1.1.3
+litellm==1.82.6
+lightrag-hku==1.4.11
+sentence-transformers>=2.2.0
+
+# ── Auth ──
+python-jose==3.3.0
+bcrypt==4.2.1
+
+# ── Voice ──
+edge-tts==7.2.8
+
+# ── Utils ──
+structlog==25.5.0
+tenacity==9.1.4
+httpx==0.28.1
+python-multipart>=0.0.6
+aiofiles>=23.0.0
