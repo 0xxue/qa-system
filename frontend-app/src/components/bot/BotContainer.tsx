@@ -245,61 +245,84 @@ export function BotContainer() {
     return () => { delete (window as any).__botSay; };
   }, []);
 
-  // ── Scene Detection (page change → botEngine handles reaction) ──
-  const prevPath = useRef(location.pathname);
+  // ── Welcome (after everything is ready) ──
   const hasWelcomed = useRef(false);
   useEffect(() => {
-    // Welcome on first load
-    if (!hasWelcomed.current) {
+    if (!hasWelcomed.current && plugin) {
       hasWelcomed.current = true;
-      botEngine.emit('welcome');
+      // Delay to ensure __botSay is registered
+      setTimeout(() => botEngine.emit('welcome'), 2000);
     }
+  }, [plugin]);
 
+  // ── Scene Detection (page change) ──
+  const prevPath = useRef(location.pathname);
+  useEffect(() => {
     if (location.pathname !== prevPath.current) {
       prevPath.current = location.pathname;
       const sceneMap: Record<string, string> = {
-        '/chat': 'page:chat', '/kb': 'page:kb', '/dashboard': 'page:dashboard', '/settings': 'page:settings',
+        '/chat': 'page:chat', '/kb': 'page:kb', '/dashboard': 'page:dashboard',
+        '/settings': 'page:settings', '/admin': 'page:settings',
       };
       const scene = sceneMap[location.pathname];
       if (scene) {
         botEngine.emit(scene);
-        sendScene(scene); // Also notify server
+        sendScene(scene);
       }
     }
   }, [location.pathname, sendScene]);
 
-  // ── Idle Behavior (personality) ──
+  // ── Idle Behavior (every 15s — uses refs to avoid stale closures) ──
+  const chatOpenRef = useRef(chatOpen);
+  const draggingRef = useRef(dragging);
+  chatOpenRef.current = chatOpen;
+  draggingRef.current = dragging;
+
   useEffect(() => {
     let count = 0;
     const interval = setInterval(() => {
-      if (dragging || chatOpen || isFlying.current) return;
+      if (draggingRef.current || chatOpenRef.current || isFlying.current) return;
       count++;
 
-      // Every 30s: random idle action
-      const actions = [
-        () => { setEmotion('happy'); plugin?.triggerAction?.('wave'); setTimeout(() => setEmotion('idle'), 2000); },
-        () => { setEmotion('thinking'); plugin?.triggerAction?.('think'); setTimeout(() => setEmotion('idle'), 3000); },
-        () => { plugin?.triggerAction?.('nod'); },
-        () => { (window as any).__botSay?.('🦀', 1500); },
-      ];
+      const say = (window as any).__botSay;
+      const p = pluginRef.current;
+      const setE = setEmotionRef.current;
 
-      // Every 20s: say something
-      if (count % 2 === 0) {
+      if (count % 3 === 0) {
+        // Every 45s: say something with data
+        fetch('/api/v1/stats').then(r => r.json()).then(stats => {
+          const dataLines = [
+            `System running with ${stats.total_users} users ✓`,
+            `${stats.total_conversations} conversations happening 💬`,
+            `${stats.total_messages} messages and counting 📨`,
+            `${stats.total_documents} docs in knowledge base 📄`,
+          ];
+          say?.(dataLines[Math.floor(Math.random() * dataLines.length)], 4000);
+          setE('talking');
+          setTimeout(() => setE('idle'), 4000);
+        }).catch(() => {});
+      } else if (count % 2 === 0) {
+        // Every 30s: personality phrase
         const phrases = [
-          'Standing by~ ✦', 'Need help with anything?', 'Click me to chat! 💬',
+          'Standing by~ ✦', 'Need help?', 'Click me to chat! 💬',
           'All systems running smooth ✓', 'I can check data for you 📊',
-          'Upload docs to KB and I can answer questions about them!',
           'Try asking me to create a knowledge base!',
-          'I\'m Clawford, your friendly data crab 🦀',
+          'I\'m Clawford 🦀', 'Ask me anything!',
         ];
-        (window as any).__botSay?.(phrases[Math.floor(Math.random() * phrases.length)], 3000);
+        say?.(phrases[Math.floor(Math.random() * phrases.length)], 3000);
       } else {
-        // Random action (gesture without speech)
-        actions[Math.floor(Math.random() * actions.length)]();
+        // Every 15s: random gesture
+        const gestures = [
+          () => { setE('happy'); p?.triggerAction?.('wave'); setTimeout(() => setE('idle'), 2000); },
+          () => { setE('thinking'); p?.triggerAction?.('think'); setTimeout(() => setE('idle'), 3000); },
+          () => { p?.triggerAction?.('nod'); },
+          () => { say?.('🦀', 1500); },
+        ];
+        gestures[Math.floor(Math.random() * gestures.length)]();
       }
-    }, 20000);
+    }, 15000);
     return () => clearInterval(interval);
-  }, [dragging, chatOpen, plugin, setEmotion]);
+  }, []);
 
   // ── Click Handler: single = toggle chat, double = poke ──
   const wasDragging = useRef(false);
