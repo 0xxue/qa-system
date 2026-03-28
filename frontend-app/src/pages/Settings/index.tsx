@@ -22,9 +22,9 @@ const LANGUAGES = [
 ];
 
 const DEFAULT_PERSONAS = [
-  { id: 'crab_boss', name: '蟹老板', emoji: '🦀', personality: 'Cheerful, humorous, business-minded crab', greeting: '嘿！我是蟹老板 🦀 有什么需要我帮忙的吗？' },
-  { id: 'nexus', name: 'Nexus', emoji: '🤖', personality: 'Professional, concise, friendly assistant', greeting: "Hi! I'm Nexus. How can I help?" },
-  { id: 'buddy', name: 'Buddy', emoji: '🎉', personality: 'Casual, talkative, lots of emoji', greeting: "Hey there! What's up? 🎉" },
+  { id: 'clawford', name: 'Clawford', emoji: '🦀', personality: 'Professional yet witty, enterprise-grade with a pinch of humor', greeting: "Hello! I'm Clawford, your enterprise AI assistant 🦀 How can I help?" },
+  { id: 'nexus', name: 'Nexus', emoji: '⚡', personality: 'Strictly professional, concise, data-driven', greeting: "Nexus online. Ready for your query." },
+  { id: 'buddy', name: 'Buddy', emoji: '🎉', personality: 'Casual, talkative, lots of emoji, friendly', greeting: "Hey there! What's up? 🎉" },
 ];
 
 function loadPersonas() {
@@ -55,7 +55,7 @@ export default function SettingsPage() {
   const [model, setModel] = useState(() => localStorage.getItem('settings_model') || 'deepseek/deepseek-chat');
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('settings_api_key') || '');
   const [language, setLanguage] = useState(() => localStorage.getItem('settings_language') || 'auto');
-  const [persona, setPersona] = useState(() => localStorage.getItem('settings_persona') || 'crab_boss');
+  const [persona, setPersona] = useState(() => localStorage.getItem('settings_persona') || 'clawford');
   const [personas, setPersonas] = useState(loadPersonas);
   const [editingPersona, setEditingPersona] = useState<any>(null);
   const [showPersonaEditor, setShowPersonaEditor] = useState(false);
