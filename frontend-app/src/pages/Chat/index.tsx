@@ -85,9 +85,13 @@ export default function ChatPage() {
   }, [conversationId, clearMessages, refreshConversations]);
 
   // Send message
+  const activeConvRef = useRef(conversationId);
+  activeConvRef.current = conversationId;
+
   const sendMsg = async (text: string) => {
     if (!text.trim() || streaming) return;
 
+    const sendConvId = conversationId; // Capture current conversation at send time
     const userMsg: Message = { id: `u-${Date.now()}`, role: 'user', content: text };
     addMessage(userMsg);
 
@@ -113,16 +117,20 @@ export default function ChatPage() {
     };
 
     try {
-      await streamQuestion(text, conversationId ?? undefined, {
-        onConversationId: (id) => { setConversationId(id); refreshConversations(); },
+      // Guard: only update UI if user hasn't switched to a different conversation
+      const isStillActive = () => activeConvRef.current === sendConvId || activeConvRef.current === null;
+
+      await streamQuestion(text, sendConvId ?? undefined, {
+        onConversationId: (id) => { if (isStillActive()) setConversationId(id); activeConvRef.current = id; refreshConversations(); },
         onStep: (step) => {
+          if (!isStillActive()) return;
           updateLastMessage({ steps: [...(useChatStore.getState().messages.at(-1)?.steps || []), step] });
           botSay(STEP_MESSAGES[step] || `Processing: ${step}`);
         },
-        onContent: (content) => { updateLastMessage({ content, loading: false }); setEmotion('talking'); botSay('Here is what I found...'); },
-        onSources: (sources) => updateLastMessage({ sources }),
-        onChart: (chart) => updateLastMessage({ chart }),
-        onConfidence: (confidence) => updateLastMessage({ confidence }),
+        onContent: (content) => { if (isStillActive()) { updateLastMessage({ content, loading: false }); setEmotion('talking'); botSay('Here is what I found...'); } },
+        onSources: (sources) => { if (isStillActive()) updateLastMessage({ sources }); },
+        onChart: (chart) => { if (isStillActive()) updateLastMessage({ chart }); },
+        onConfidence: (confidence) => { if (isStillActive()) updateLastMessage({ confidence }); },
         onDone: () => {
           setStreaming(false);
           setEmotion('happy');

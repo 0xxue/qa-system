@@ -31,43 +31,53 @@ interface Props {
 }
 
 export function BotChatPanel({ open, onClose, onSend, botPos, botSize }: Props) {
-  const [botName, setBotName] = useState('NEXUS BOT');
+  const [botName, setBotName] = useState('CLAWFORD');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-
-  // Listen for connected message to get persona greeting
-  useEffect(() => {
-    return onBotMessage((msg: BotMessage) => {
-      if (msg.type === 'connected' && (msg as any).persona) {
-        const p = (msg as any).persona;
-        setBotName(p.name?.toUpperCase() || 'NEXUS BOT');
-        setMessages([{ id: 'welcome', role: 'bot', content: p.greeting || "Hi! Ask me anything!", timestamp: Date.now() }]);
-      }
-      if (msg.type === 'persona_changed' && (msg as any).persona) {
-        setBotName((msg as any).persona.name?.toUpperCase() || 'NEXUS BOT');
-      }
-    });
-  }, []);
   const [input, setInput] = useState('');
   const [thinking, setThinking] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const waitingForReply = useRef(false); // Track if we're expecting a reply
 
-  // Listen for bot messages from WebSocket
+  // Listen for WebSocket messages
   useEffect(() => {
     return onBotMessage((msg: BotMessage) => {
-      if (msg.type === 'bot_message' || msg.type === 'bot_alert') {
-        if (msg.content) {
-          setMessages(prev => [...prev, {
-            id: `bot-${Date.now()}`,
-            role: 'bot',
-            content: msg.content!,
-            emotion: msg.emotion,
-            tools: msg.tool_calls,
-            timestamp: Date.now(),
-          }]);
-          setThinking(false);
-        }
+      // Persona info
+      if (msg.type === 'connected' && (msg as any).persona) {
+        const p = (msg as any).persona;
+        setBotName(p.name?.toUpperCase() || 'CLAWFORD');
+        setMessages([{ id: 'welcome', role: 'bot', content: p.greeting || "Hi! Ask me anything!", timestamp: Date.now() }]);
       }
-      if (msg.type === 'bot_emotion' && msg.emotion === 'thinking') {
+      if (msg.type === 'persona_changed' && (msg as any).persona) {
+        setBotName((msg as any).persona.name?.toUpperCase() || 'CLAWFORD');
+      }
+
+      // Only add to chat panel if:
+      // 1. We're waiting for a reply (user sent a message), OR
+      // 2. It's a bot_alert (always show alerts in panel)
+      if (msg.type === 'bot_message' && waitingForReply.current && msg.content) {
+        setMessages(prev => [...prev, {
+          id: `bot-${Date.now()}`,
+          role: 'bot',
+          content: msg.content!,
+          emotion: msg.emotion,
+          tools: msg.tool_calls,
+          timestamp: Date.now(),
+        }]);
+        setThinking(false);
+        waitingForReply.current = false;
+      }
+
+      if (msg.type === 'bot_alert' && msg.content) {
+        setMessages(prev => [...prev, {
+          id: `alert-${Date.now()}`,
+          role: 'bot',
+          content: `⚠️ ${msg.content}`,
+          emotion: msg.emotion,
+          timestamp: Date.now(),
+        }]);
+      }
+
+      if (msg.type === 'bot_emotion' && msg.emotion === 'thinking' && waitingForReply.current) {
         setThinking(true);
       }
     });
@@ -80,11 +90,12 @@ export function BotChatPanel({ open, onClose, onSend, botPos, botSize }: Props) 
 
   const handleSend = useCallback(() => {
     const text = input.trim();
-    if (!text) return;
+    if (!text || thinking) return;
     setMessages(prev => [...prev, { id: `user-${Date.now()}`, role: 'user', content: text, timestamp: Date.now() }]);
     setInput('');
+    waitingForReply.current = true;
     onSend(text);
-  }, [input, onSend]);
+  }, [input, onSend, thinking]);
 
   if (!open) return null;
 
