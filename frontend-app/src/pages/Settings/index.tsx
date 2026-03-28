@@ -21,11 +21,32 @@ const LANGUAGES = [
   { value: 'ja', label: '日本語' },
 ];
 
-const PERSONAS = [
-  { id: 'crab_boss', label: '蟹老板', emoji: '🦀', desc: 'Cheerful, humorous, business-minded crab' },
-  { id: 'nexus', label: 'Nexus', emoji: '🤖', desc: 'Professional, concise, friendly assistant' },
-  { id: 'buddy', label: 'Buddy', emoji: '🎉', desc: 'Casual, talkative, lots of emoji' },
+const DEFAULT_PERSONAS = [
+  { id: 'crab_boss', name: '蟹老板', emoji: '🦀', personality: 'Cheerful, humorous, business-minded crab', greeting: '嘿！我是蟹老板 🦀 有什么需要我帮忙的吗？' },
+  { id: 'nexus', name: 'Nexus', emoji: '🤖', personality: 'Professional, concise, friendly assistant', greeting: "Hi! I'm Nexus. How can I help?" },
+  { id: 'buddy', name: 'Buddy', emoji: '🎉', personality: 'Casual, talkative, lots of emoji', greeting: "Hey there! What's up? 🎉" },
 ];
+
+function loadPersonas() {
+  const custom = localStorage.getItem('custom_personas');
+  const customs = custom ? JSON.parse(custom) : [];
+  return [...DEFAULT_PERSONAS, ...customs];
+}
+
+function saveCustomPersona(p: { id: string; name: string; emoji: string; personality: string; greeting: string }) {
+  const custom = localStorage.getItem('custom_personas');
+  const customs = custom ? JSON.parse(custom) : [];
+  const existing = customs.findIndex((c: any) => c.id === p.id);
+  if (existing >= 0) customs[existing] = p;
+  else customs.push(p);
+  localStorage.setItem('custom_personas', JSON.stringify(customs));
+}
+
+function deleteCustomPersona(id: string) {
+  const custom = localStorage.getItem('custom_personas');
+  const customs = custom ? JSON.parse(custom) : [];
+  localStorage.setItem('custom_personas', JSON.stringify(customs.filter((c: any) => c.id !== id)));
+}
 
 export default function SettingsPage() {
   const { enabled: botEnabled, setEnabled: setBotEnabled, size: botSize, setSize: setBotSize } = useBotStore();
@@ -35,16 +56,41 @@ export default function SettingsPage() {
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('settings_api_key') || '');
   const [language, setLanguage] = useState(() => localStorage.getItem('settings_language') || 'auto');
   const [persona, setPersona] = useState(() => localStorage.getItem('settings_persona') || 'crab_boss');
+  const [personas, setPersonas] = useState(loadPersonas);
+  const [editingPersona, setEditingPersona] = useState<any>(null);
+  const [showPersonaEditor, setShowPersonaEditor] = useState(false);
 
   const handlePersonaChange = (id: string) => {
     setPersona(id);
     localStorage.setItem('settings_persona', id);
-    // Send persona change via WebSocket
     const ws = (window as any).__botWs;
     if (ws?.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'persona_change', persona: id }));
     }
-    toast(`Persona: ${PERSONAS.find(p => p.id === id)?.label}`, 'success');
+    toast(`Persona: ${personas.find(p => p.id === id)?.name}`, 'success');
+  };
+
+  const handleSavePersona = () => {
+    if (!editingPersona?.name) return;
+    const p = { ...editingPersona, id: editingPersona.id || `custom_${Date.now()}` };
+    saveCustomPersona(p);
+    setPersonas(loadPersonas());
+    setShowPersonaEditor(false);
+    setEditingPersona(null);
+    // Also send to backend to register
+    const ws = (window as any).__botWs;
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'register_persona', persona: p }));
+    }
+    toast(`Persona "${p.name}" saved`, 'success');
+  };
+
+  const handleDeletePersona = (id: string) => {
+    if (DEFAULT_PERSONAS.find(p => p.id === id)) { toast('Cannot delete built-in persona', 'error'); return; }
+    deleteCustomPersona(id);
+    setPersonas(loadPersonas());
+    if (persona === id) handlePersonaChange('nexus');
+    toast('Persona deleted', 'info');
   };
 
   const handleSaveModel = () => {
@@ -139,22 +185,80 @@ export default function SettingsPage() {
       {/* Bot Persona */}
       <SettingSection icon={User} title="BOT PERSONA">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {PERSONAS.map(p => (
-            <label key={p.id} style={{
+          {personas.map(p => (
+            <div key={p.id} style={{
               display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
               border: `2px solid ${persona === p.id ? 'var(--orange)' : 'var(--line)'}`,
               background: persona === p.id ? 'rgba(212, 82, 26, 0.06)' : 'transparent',
               cursor: 'pointer', transition: 'all 0.2s',
-            }}>
+            }} onClick={() => handlePersonaChange(p.id)}>
               <input type="radio" name="persona" value={p.id} checked={persona === p.id}
-                onChange={() => handlePersonaChange(p.id)} style={{ accentColor: 'var(--orange)' }} />
+                onChange={() => {}} style={{ accentColor: 'var(--orange)' }} />
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 500 }}>{p.emoji} {p.label}</div>
-                <div className="font-mono" style={{ fontSize: 10, color: 'var(--dim)' }}>{p.desc}</div>
+                <div style={{ fontSize: 13, fontWeight: 500 }}>{p.emoji} {p.name}</div>
+                <div className="font-mono" style={{ fontSize: 10, color: 'var(--dim)' }}>{p.personality}</div>
               </div>
-            </label>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button onClick={e => { e.stopPropagation(); setEditingPersona({ ...p }); setShowPersonaEditor(true); }}
+                  className="font-mono" style={{ background: 'none', border: '1px solid var(--line)', padding: '2px 6px', fontSize: 9, cursor: 'pointer', color: 'var(--mid)' }}>
+                  EDIT
+                </button>
+                {!DEFAULT_PERSONAS.find(d => d.id === p.id) && (
+                  <button onClick={e => { e.stopPropagation(); handleDeletePersona(p.id); }}
+                    className="font-mono" style={{ background: 'none', border: '1px solid var(--error)', padding: '2px 6px', fontSize: 9, cursor: 'pointer', color: 'var(--error)' }}>
+                    DEL
+                  </button>
+                )}
+              </div>
+            </div>
           ))}
         </div>
+        <button onClick={() => { setEditingPersona({ id: '', name: '', emoji: '🤖', personality: '', greeting: '' }); setShowPersonaEditor(true); }}
+          className="font-mono" style={{
+            marginTop: 10, padding: '8px 14px', border: '2px dashed var(--line)',
+            background: 'transparent', color: 'var(--orange)', fontSize: 11,
+            cursor: 'pointer', width: '100%', textAlign: 'center',
+          }}>
+          + CREATE CUSTOM PERSONA
+        </button>
+
+        {/* Persona Editor */}
+        {showPersonaEditor && editingPersona && (
+          <div style={{
+            marginTop: 12, padding: 14, border: '2px solid var(--orange)',
+            background: 'rgba(212, 82, 26, 0.03)', display: 'flex', flexDirection: 'column', gap: 10,
+          }}>
+            <div className="font-display" style={{ fontSize: 14, letterSpacing: 2 }}>
+              {editingPersona.id ? 'EDIT PERSONA' : 'NEW PERSONA'}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ flex: 0 }}>
+                <div className="font-mono" style={{ fontSize: 9, color: 'var(--dim)', marginBottom: 4 }}>EMOJI</div>
+                <Input value={editingPersona.emoji} onChange={e => setEditingPersona({ ...editingPersona, emoji: e.target.value })}
+                  style={{ width: 50, textAlign: 'center', fontSize: 20 }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div className="font-mono" style={{ fontSize: 9, color: 'var(--dim)', marginBottom: 4 }}>NAME</div>
+                <Input value={editingPersona.name} onChange={e => setEditingPersona({ ...editingPersona, name: e.target.value })}
+                  placeholder="e.g. 蟹老板" />
+              </div>
+            </div>
+            <div>
+              <div className="font-mono" style={{ fontSize: 9, color: 'var(--dim)', marginBottom: 4 }}>PERSONALITY</div>
+              <Input value={editingPersona.personality} onChange={e => setEditingPersona({ ...editingPersona, personality: e.target.value })}
+                placeholder="e.g. Cheerful, humorous, speaks with crab puns" />
+            </div>
+            <div>
+              <div className="font-mono" style={{ fontSize: 9, color: 'var(--dim)', marginBottom: 4 }}>GREETING</div>
+              <Input value={editingPersona.greeting} onChange={e => setEditingPersona({ ...editingPersona, greeting: e.target.value })}
+                placeholder="e.g. 嘿！我是蟹老板 🦀" />
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <Button variant="outline" size="sm" onClick={() => { setShowPersonaEditor(false); setEditingPersona(null); }}>CANCEL</Button>
+              <Button size="sm" onClick={handleSavePersona}>SAVE</Button>
+            </div>
+          </div>
+        )}
       </SettingSection>
 
       {/* Bot — instant toggle + slider */}

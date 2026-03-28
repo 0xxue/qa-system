@@ -198,6 +198,25 @@ async def bot_websocket(ws: WebSocket, token: str = Query(default="")):
                         "persona": {"name": p["name"], "personality": p["personality"]},
                     })
 
+            elif msg_type == "register_persona":
+                # Register a custom persona from frontend
+                p = data.get("persona", {})
+                if p.get("name") and p.get("id"):
+                    BOT_PERSONAS[p["id"]] = {
+                        "name": p["name"],
+                        "personality": p.get("personality", "Friendly assistant"),
+                        "greeting": p.get("greeting", f"Hi! I'm {p['name']}!"),
+                        "avatar": "vrm_default",
+                    }
+                    set_persona(p["id"])
+                    await send({
+                        "type": "bot_message",
+                        "content": BOT_PERSONAS[p["id"]]["greeting"],
+                        "emotion": "happy",
+                        "action": "wave",
+                    })
+                    logger.info("Custom persona registered", name=p["name"], id=p["id"])
+
     except WebSocketDisconnect:
         await bot_ws_manager.disconnect(user_id, ws)
     except Exception as e:
