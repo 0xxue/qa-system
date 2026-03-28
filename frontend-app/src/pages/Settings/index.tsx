@@ -30,7 +30,14 @@ const DEFAULT_PERSONAS = [
 function loadPersonas() {
   const custom = localStorage.getItem('custom_personas');
   const customs = custom ? JSON.parse(custom) : [];
-  return [...DEFAULT_PERSONAS, ...customs];
+  // Merge: custom overrides default if same id, otherwise append
+  const merged = [...DEFAULT_PERSONAS];
+  for (const c of customs) {
+    const idx = merged.findIndex(m => m.id === c.id);
+    if (idx >= 0) merged[idx] = { ...merged[idx], ...c };
+    else merged.push(c);
+  }
+  return merged;
 }
 
 function saveCustomPersona(p: { id: string; name: string; emoji: string; personality: string; greeting: string }) {

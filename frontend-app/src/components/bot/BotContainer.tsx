@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import type { BotEmotion } from '../../types/bot';
 import { useBotStore } from '../../store/bot';
 import { useBotWebSocket } from '../../hooks/useBotWebSocket';
+import { botEngine } from '../../hooks/useBotEngine';
 import { BotChatPanel } from './BotChatPanel';
 
 /**
@@ -49,6 +50,68 @@ export function BotContainer() {
   const clickCount = useRef(0);
   const clickTimer = useRef<ReturnType<typeof setTimeout>>();
 
+  // ── Fly To (smooth movement) ──
+  const flyTo = useCallback((x: number, y: number) => {
+    const s = getMobileSize();
+    setPos({
+      x: Math.max(10, Math.min(window.innerWidth - s - 10, x - s / 2)),
+      y: Math.max(10, Math.min(window.innerHeight - s - 10, y - s / 2)),
+    });
+  }, [size]);
+
+  const getDefaultPos = useCallback(() => {
+    const s = getMobileSize();
+    return { x: window.innerWidth - s - 30, y: window.innerHeight - s - 70 };
+  }, [size]);
+
+  // ── Connect Bot Engine ──
+  useEffect(() => {
+    botEngine.connect({
+      moveTo: flyTo,
+      say: (text, duration) => (window as any).__botSay?.(text, duration || 3000),
+      setEmotion,
+      triggerAction: (a) => plugin?.triggerAction?.(a),
+      sendChat,
+      getDefaultPos,
+    });
+
+    // Register built-in scenes
+    botEngine.registerScene('page:chat', {
+      moveTo: { x: '85vw', y: '75vh' },
+      speech: "Let's chat! Ask me anything ▶",
+      emotion: 'happy',
+    });
+    botEngine.registerScene('page:kb', {
+      moveTo: { x: '75vw', y: '35vh' },
+      speech: 'Knowledge base! Upload docs here ◈',
+      emotion: 'idle',
+    });
+    botEngine.registerScene('page:dashboard', {
+      speech: 'Dashboard! Let me check the data...',
+      emotion: 'thinking',
+      steps: [
+        { elementId: '.stat-cards > div:nth-child(1)', speech: 'Here are your user stats 👥', emotion: 'talking', duration: 2500 },
+        { elementId: '.stat-cards > div:nth-child(2)', speech: 'Conversation activity looks good 💬', emotion: 'talking', duration: 2500 },
+        { elementId: '.stat-cards > div:nth-child(3)', speech: 'Messages are flowing! 📨', emotion: 'happy', duration: 2500 },
+        { elementId: '.charts-grid > div:nth-child(1)', speech: 'And here are the trend charts 📊', emotion: 'talking', duration: 3000 },
+        { speech: 'Data overview complete! Need deeper analysis? Just ask 🦀', emotion: 'happy', action: 'nod', duration: 3000 },
+      ],
+    });
+    botEngine.registerScene('page:settings', {
+      moveTo: { x: '50vw', y: '40vh' },
+      speech: 'Settings! Customize me here ⚙',
+      emotion: 'idle',
+    });
+
+    // Welcome scene (first load)
+    botEngine.registerScene('welcome', {
+      speech: 'Welcome! I\'m Clawford 🦀 Click me to chat, or I\'ll show you around!',
+      emotion: 'happy',
+      action: 'wave',
+      delay: 1500,
+    });
+  }, [flyTo, setEmotion, plugin, sendChat, getDefaultPos]);
+
   // ── Mount Plugin ──
   useEffect(() => {
     if (!plugin || !containerRef.current || !enabled) return;
@@ -74,39 +137,28 @@ export function BotContainer() {
     return () => { delete (window as any).__botSay; };
   }, []);
 
-  // ── Scene Detection (page change → send scene event) ──
-  // ── Scene Detection (page change → bot reacts immediately + sends to server) ──
+  // ── Scene Detection (page change → botEngine handles reaction) ──
   const prevPath = useRef(location.pathname);
-  const SCENE_REACTIONS: Record<string, { speech: string; emotion: BotEmotion }> = {
-    '/chat': { speech: "Let's chat! Ask me anything ▶", emotion: 'happy' },
-    '/kb': { speech: 'Knowledge base! Upload docs or search here ◈', emotion: 'idle' },
-    '/dashboard': { speech: 'Dashboard — checking the numbers 📊', emotion: 'thinking' },
-    '/settings': { speech: 'Settings! Customize me here ⚙', emotion: 'idle' },
-  };
+  const hasWelcomed = useRef(false);
   useEffect(() => {
+    // Welcome on first load
+    if (!hasWelcomed.current) {
+      hasWelcomed.current = true;
+      botEngine.emit('welcome');
+    }
+
     if (location.pathname !== prevPath.current) {
       prevPath.current = location.pathname;
-
-      // Immediate frontend reaction (no WebSocket needed)
-      const reaction = SCENE_REACTIONS[location.pathname];
-      if (reaction) {
-        setEmotion(reaction.emotion);
-        (window as any).__botSay?.(reaction.speech, 3000);
-        if (reaction.emotion === 'thinking') {
-          setTimeout(() => setEmotion('happy'), 2000);
-        } else {
-          setTimeout(() => setEmotion('idle'), 3000);
-        }
-      }
-
-      // Also send to server (for logging / advanced reactions)
       const sceneMap: Record<string, string> = {
         '/chat': 'page:chat', '/kb': 'page:kb', '/dashboard': 'page:dashboard', '/settings': 'page:settings',
       };
       const scene = sceneMap[location.pathname];
-      if (scene) sendScene(scene);
+      if (scene) {
+        botEngine.emit(scene);
+        sendScene(scene); // Also notify server
+      }
     }
-  }, [location.pathname, sendScene, setEmotion]);
+  }, [location.pathname, sendScene]);
 
   // ── Idle Phrases (every 45s in companion mode) ──
   useEffect(() => {

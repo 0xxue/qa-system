@@ -105,7 +105,7 @@ async def bot_websocket(ws: WebSocket, token: str = Query(default="")):
             pass
 
     # Send connected message with persona info
-    persona = get_persona()
+    persona = get_persona(user_id)
     await send({
         "type": "connected",
         "mode": state.mode,
@@ -185,8 +185,8 @@ async def bot_websocket(ws: WebSocket, token: str = Query(default="")):
             elif msg_type == "persona_change":
                 persona_id = data.get("persona", "")
                 if persona_id in BOT_PERSONAS:
-                    set_persona(persona_id)
-                    p = get_persona()
+                    set_persona(persona_id, user_id)
+                    p = get_persona(user_id)
                     await send({
                         "type": "bot_message",
                         "content": p["greeting"],
@@ -208,7 +208,7 @@ async def bot_websocket(ws: WebSocket, token: str = Query(default="")):
                         "greeting": p.get("greeting", f"Hi! I'm {p['name']}!"),
                         "avatar": "vrm_default",
                     }
-                    set_persona(p["id"])
+                    set_persona(p["id"], user_id)
                     await send({
                         "type": "bot_message",
                         "content": BOT_PERSONAS[p["id"]]["greeting"],

@@ -53,18 +53,23 @@ BOT_PERSONAS = {
     },
 }
 
-# Active persona (can be changed via settings)
-_active_persona = "clawford"
+# Per-user active persona
+_user_personas: dict[str, str] = {}  # user_id → persona_id
+_default_persona = "clawford"
 
 
-def get_persona() -> dict:
-    return BOT_PERSONAS.get(_active_persona, BOT_PERSONAS["nexus"])
+def get_persona(user_id: str = None) -> dict:
+    persona_id = _user_personas.get(user_id, _default_persona) if user_id else _default_persona
+    return BOT_PERSONAS.get(persona_id, BOT_PERSONAS["clawford"])
 
 
-def set_persona(persona_id: str):
-    global _active_persona
+def set_persona(persona_id: str, user_id: str = None):
     if persona_id in BOT_PERSONAS:
-        _active_persona = persona_id
+        if user_id:
+            _user_personas[user_id] = persona_id
+        else:
+            global _default_persona
+            _default_persona = persona_id
 
 
 def build_system_prompt(persona: dict = None) -> str:
@@ -132,8 +137,9 @@ async def think(message: str, user, context: dict = None) -> BotResponse:
     user_role = getattr(user, "role", "user")
     tool_defs = get_tool_definitions(user_role)
 
-    # Build messages with active persona
-    persona = get_persona()
+    # Build messages with user's active persona
+    user_id = str(getattr(user, 'id', ''))
+    persona = get_persona(user_id)
     system_prompt = build_system_prompt(persona)
     messages = [
         {"role": "system", "content": system_prompt},
