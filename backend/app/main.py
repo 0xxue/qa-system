@@ -98,6 +98,10 @@ def create_app() -> FastAPI:
     # Routes
     app.include_router(api_router, prefix="/api/v1")
 
+    # WebSocket routes (mounted directly, bypasses HTTP middleware)
+    from app.api.v1.ws import router as ws_router
+    app.include_router(ws_router)
+
     return app
 
 

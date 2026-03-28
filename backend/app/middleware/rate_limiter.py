@@ -50,6 +50,12 @@ class RateLimiter(BaseHTTPMiddleware):
         self._local_store: dict[str, list[float]] = {}
 
     async def dispatch(self, request: Request, call_next):
+        # Skip WebSocket connections (BaseHTTPMiddleware doesn't support WS)
+        if "websocket" in request.scope.get("type", ""):
+            return await call_next(request)
+        # Skip upgrade requests (WebSocket handshake)
+        if request.headers.get("upgrade", "").lower() == "websocket":
+            return await call_next(request)
         # Skip rate limiting for health checks
         if request.url.path in ("/health", "/api/v1/health"):
             return await call_next(request)

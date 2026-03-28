@@ -30,6 +30,9 @@ class TraceMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next):
+        # Skip WebSocket connections
+        if request.headers.get("upgrade", "").lower() == "websocket":
+            return await call_next(request)
         # Propagate existing trace_id or generate new one
         trace_id = request.headers.get("X-Trace-Id", str(uuid.uuid4())[:16])
         request.state.trace_id = trace_id
