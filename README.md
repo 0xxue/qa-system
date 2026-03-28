@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  <a href="https://demo-mu-jade.vercel.app/indexv2.html"><strong>Live Demo (3D Bot)</strong></a>
+</p>
+
+<p align="center">
   <a href="#features">Features</a> |
   <a href="#screenshots">Screenshots</a> |
   <a href="#quick-start">Quick Start</a> |
